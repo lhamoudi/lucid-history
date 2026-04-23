@@ -2,10 +2,34 @@ import { writeFile, readdir, mkdir, readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { exportPagePng } from './lucid.js';
+import type { DocDiff, PageDiff } from './types.js';
+
+const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+
+// Matches "<any label> | <Month DD, YYYY>" — the date-stamp shape used across diagrams.
+const LABEL_DATE_RE =
+  /^[^|]+\|\s*(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s*\d{4}$/;
+
+function isDateOnlyChange(pd: PageDiff): boolean {
+  const isLabelDate = (text: string) => LABEL_DATE_RE.test(text.trim());
+  return (
+    pd.page.renamedFrom === null &&
+    pd.shapesAdded.length === 0 &&
+    pd.shapesRemoved.length === 0 &&
+    pd.shapesClassChanged.length === 0 &&
+    pd.linesAdded.length === 0 &&
+    pd.linesRemoved.length === 0 &&
+    pd.linesRewired.length === 0 &&
+    pd.linesLabelChanged.length === 0 &&
+    pd.shapesTextChanged.length > 0 &&
+    pd.shapesTextChanged.every((c) => isLabelDate(c.before) && isLabelDate(c.after))
+  );
+}
 
 export async function renderChangedPages(opts: {
   documentId: string;
   changedPageIds: string[];
+  pageTitles: Map<string, string>;
   timestamp: string;
   renderDir: string;
 }): Promise<string[]> {
@@ -22,10 +46,41 @@ export async function renderChangedPages(opts: {
     const newHash = sha256(png);
     if (priorHash === newHash) continue;
 
-    const path = join(pageDir, `${opts.timestamp}.png`);
+    const title = opts.pageTitles.get(pageId);
+    const stem = title ? `${opts.timestamp}-${sanitize(title)}` : opts.timestamp;
+    const path = join(pageDir, `${stem}.png`);
     await writeFile(path, png);
     written.push(path);
   }
+  return written;
+}
+
+export async function renderComparedPages(opts: {
+  baseDocumentId: string;
+  headDocumentId: string;
+  diff: DocDiff;
+  outDir: string;
+}): Promise<string[]> {
+  const written: string[] = [];
+  const pagesDir = join(opts.outDir, 'pages');
+  await mkdir(pagesDir, { recursive: true });
+
+  for (const pd of opts.diff.perPage) {
+    if (isDateOnlyChange(pd)) continue;
+    const [before, after] = await Promise.all([
+      exportPagePng(opts.baseDocumentId, pd.page.id),
+      exportPagePng(opts.headDocumentId, pd.page.id),
+    ]);
+    if (sha256(before) === sha256(after)) continue;
+    const baseTitle = sanitize(pd.page.renamedFrom ?? pd.page.title);
+    const headTitle = sanitize(pd.page.title);
+    const beforePath = join(pagesDir, `${baseTitle}-before.png`);
+    const afterPath = join(pagesDir, `${headTitle}-after.png`);
+    await writeFile(beforePath, before);
+    await writeFile(afterPath, after);
+    written.push(beforePath, afterPath);
+  }
+
   return written;
 }
 

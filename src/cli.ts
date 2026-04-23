@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { Command } from 'commander';
-import { writeFile, readFile, mkdir } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fetchDocument } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
 import { summarizeDiff } from './summarize.js';
-import { renderChangedPages } from './renders.js';
+import { renderChangedPages, renderComparedPages } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest } from './git.js';
 import type { LucidDocument } from './types.js';
 
@@ -56,19 +56,46 @@ program
   .argument('<base-doc-id>', 'The older / restored document ID')
   .argument('<head-doc-id>', 'The current document ID')
   .option('--raw', 'Print the DocDiff JSON instead of calling the summarizer')
-  .action(async (baseId: string, headId: string, opts: { raw?: boolean }) => {
-    const [base, head] = await Promise.all([fetchDocument(baseId), fetchDocument(headId)]);
-    const d = enrichLinesWithShapeText(diff(base, head), head);
-    if (opts.raw) {
-      console.log(JSON.stringify(d, null, 2));
-      return;
-    }
-    if (isEmpty(d)) {
-      console.log('No material changes.');
-      return;
-    }
-    console.log(await summarizeDiff(head.title, d));
-  });
+  .option('--skip-renders', 'Skip PNG exports', false)
+  .option('--out <dir>', 'Directory to write PNGs into', './compare-output')
+  .action(
+    async (
+      baseId: string,
+      headId: string,
+      opts: { raw?: boolean; skipRenders: boolean; out: string },
+    ) => {
+      const [base, head] = await Promise.all([fetchDocument(baseId), fetchDocument(headId)]);
+      const d = enrichLinesWithShapeText(diff(base, head), head);
+      if (opts.raw) {
+        console.log(JSON.stringify(d, null, 2));
+        return;
+      }
+      if (isEmpty(d)) {
+        console.log('No material changes.');
+        return;
+      }
+      await rm(opts.out, { recursive: true, force: true });
+      const [summary, renders] = await Promise.all([
+        summarizeDiff(head.title, d),
+        opts.skipRenders
+          ? Promise.resolve([] as string[])
+          : renderComparedPages({
+              baseDocumentId: baseId,
+              headDocumentId: headId,
+              diff: d,
+              outDir: opts.out,
+            }),
+      ]);
+      await mkdir(opts.out, { recursive: true });
+      const summaryPath = join(opts.out, 'summary.md');
+      await writeFile(summaryPath, summary);
+      console.log(summary);
+      console.log(`\nWrote summary to ${summaryPath}`);
+      if (renders.length > 0) {
+        console.log(`Wrote ${renders.length} PNG(s) to ${join(opts.out, 'pages')}`);
+      }
+    },
+  );
 
 program
   .command('snapshot')
@@ -136,6 +163,7 @@ program
         : await renderChangedPages({
             documentId: docId,
             changedPageIds: changedPageIds(d),
+            pageTitles: new Map(doc.pages.map((p) => [p.id, p.title])),
             timestamp,
             renderDir: join(docDir, 'pages'),
           });
