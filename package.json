@@ -1,0 +1,35 @@
+{
+  "name": "lucid-history",
+  "version": "0.1.0",
+  "description": "Daily-snapshot Lucidchart documents to a private git repo with AI-generated change summaries",
+  "bin": {
+    "lucid-history": "./dist/cli.js"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
+    "@octokit/rest": "^21.0.0",
+    "commander": "^12.1.0",
+    "dotenv": "^17.4.2",
+    "simple-git": "^3.27.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "license": "MIT"
+}
