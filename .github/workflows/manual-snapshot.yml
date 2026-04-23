@@ -1,0 +1,46 @@
+name: Manual Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      document:
+        description: 'Document ID to snapshot, or "all" to run every doc in docs.json'
+        required: true
+        type: string
+        default: all
+      dry_run:
+        description: 'Dry run (log what would happen without committing)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install lucid-history
+        run: npm install github:lhamoudi/lucid-history
+
+      - name: Run snapshot
+        env:
+          LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
+        run: |
+          DRY_RUN_FLAG=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            DRY_RUN_FLAG="--dry-run"
+          fi
+          if [ "${{ inputs.document }}" = "all" ]; then
+            for id in $(jq -r '.[].id' docs.json); do
+              npx lucid-history snapshot "$id" --repo <your-org>/<your-snapshots-repo> $DRY_RUN_FLAG
+            done
+          else
+            npx lucid-history snapshot "${{ inputs.document }}" --repo <your-org>/<your-snapshots-repo> $DRY_RUN_FLAG
+          fi

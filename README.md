@@ -59,10 +59,12 @@ npx lucid-history diff path/to/base.json path/to/head.json --raw   # DocDiff JSO
 
 ```bash
 npx lucid-history compare <base-doc-id> <head-doc-id>
-npx lucid-history compare <base-doc-id> <head-doc-id> --raw   # DocDiff JSON only, no AI
+npx lucid-history compare <base-doc-id> <head-doc-id> --raw          # DocDiff JSON only, no AI
+npx lucid-history compare <base-doc-id> <head-doc-id> --out ./out    # write PNGs + summary to dir
+npx lucid-history compare <base-doc-id> <head-doc-id> --skip-renders # skip PNG exports
 ```
 
-Fetches both documents live and prints an AI-generated summary of structural differences. Useful when you restore an old version of a document in Lucid (which creates a new doc ID) and want to compare it against the current version.
+Fetches both documents live and prints an AI-generated summary of structural differences. Useful when you restore an old version of a document in Lucid (which creates a new doc ID) and want to compare it against the current version. With `--out`, writes `summary.md` and per-page before/after PNGs into the specified directory.
 
 ### `snapshot` — full daily pipeline
 
@@ -99,13 +101,21 @@ A companion file per doc (`snapshots/<doc-id>/_index.md`) lists every page id se
 
 ## GitHub Actions
 
-A ready-to-use workflow lives at `.github/workflows/daily-snapshot.yml`. Add these secrets to your repo and fill in your doc ID and snapshots repo name in the workflow file:
+Three ready-to-use workflows are provided:
 
-| Secret | Description |
-|---|---|
-| `LUCID_API_KEY` | Lucid REST API key |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `SNAPSHOTS_GITHUB_TOKEN` | GitHub PAT with `repo` scope for the snapshots repo |
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| [`daily-snapshot.yml`](.github/workflows/daily-snapshot.yml) | Schedule (Mon–Fri 09:00 UTC) + manual | Snapshots every doc in `docs.json` |
+| [`manual-snapshot.yml`](.github/workflows/manual-snapshot.yml) | Actions tab → Run workflow | Snapshot a single doc ID or all docs; supports `--dry-run` |
+| [`compare.yml`](.github/workflows/compare.yml) | Actions tab → Run workflow | Compare two live doc IDs; summary shown inline, PNGs uploaded as ZIP artifact |
+
+Fill in `<your-org>/<your-snapshots-repo>` in the snapshot workflows, then add these secrets:
+
+| Secret | Used by | Description |
+|---|---|---|
+| `LUCID_API_KEY` | all | Lucid REST API key |
+| `ANTHROPIC_API_KEY` | all | Anthropic API key |
+| `SNAPSHOTS_GITHUB_TOKEN` | snapshot workflows | GitHub PAT with `repo` scope for the snapshots repo |
 
 ## Development
 
@@ -122,7 +132,7 @@ npm run build
 - [x] CLI (`fetch`, `diff`, `compare`, `snapshot`)
 - [x] PNG rendering with hash-dedupe
 - [x] Git + PR flow via simple-git and @octokit/rest
-- [x] GitHub Actions cron workflow
+- [x] GitHub Actions workflows (daily, manual, compare)
 - [ ] `HISTORY.md` / `_index.md` auto-update on each snapshot (functions exist in `src/indexer.ts`; not yet wired into `snapshot`)
 - [ ] Lucid PNG export endpoint path verified against Lucid docs
 

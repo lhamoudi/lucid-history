@@ -1,0 +1,61 @@
+name: Compare Documents
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_doc_id:
+        description: 'Base (older/restored) document ID'
+        required: true
+        type: string
+      head_doc_id:
+        description: 'Head (current) document ID'
+        required: true
+        type: string
+      skip_renders:
+        description: 'Skip PNG exports'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install lucid-history
+        run: npm install github:lhamoudi/lucid-history
+
+      - name: Run compare
+        env:
+          LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          SKIP_FLAG=""
+          if [ "${{ inputs.skip_renders }}" = "true" ]; then
+            SKIP_FLAG="--skip-renders"
+          fi
+          npx lucid-history compare \
+            "${{ inputs.base_doc_id }}" \
+            "${{ inputs.head_doc_id }}" \
+            --out compare-output \
+            $SKIP_FLAG
+
+      - name: Write summary to job view
+        if: always()
+        run: |
+          if [ -f compare-output/summary.md ]; then
+            cat compare-output/summary.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No differences found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload compare output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compare-output
+          path: compare-output/
+          if-no-files-found: ignore

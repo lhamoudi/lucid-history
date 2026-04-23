@@ -14,18 +14,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - run: npm ci
+      - name: Install lucid-history
+        run: npm install github:lhamoudi/lucid-history
 
-      - run: npm run build
-
-      - name: Run snapshot
+      - name: Run snapshots
         env:
           LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
         run: |
-          npx lucid-history snapshot <your-lucid-doc-id> \
-            --repo <your-org>/<your-snapshots-repo> \
-            --skip-renders
+          for id in $(jq -r '.[].id' docs.json); do
+            npx lucid-history snapshot "$id" --repo <your-org>/<your-snapshots-repo>
+          done
