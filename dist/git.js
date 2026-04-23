@@ -12,7 +12,7 @@ function gitPush(localPath, branch) {
 }
 export async function cloneOrOpen(repo, token = process.env.GITHUB_TOKEN) {
     const url = token
-        ? `https://${token}@github.com/${repo.owner}/${repo.name}.git`
+        ? `https://${token.trim()}@github.com/${repo.owner}/${repo.name}.git`
         : `https://github.com/${repo.owner}/${repo.name}.git`;
     if (await exists(repo.localPath)) {
         try {

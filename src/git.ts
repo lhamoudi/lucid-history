@@ -23,7 +23,7 @@ export async function cloneOrOpen(
   token = process.env.GITHUB_TOKEN,
 ): Promise<SimpleGit> {
   const url = token
-    ? `https://${token}@github.com/${repo.owner}/${repo.name}.git`
+    ? `https://${token.trim()}@github.com/${repo.owner}/${repo.name}.git`
     : `https://github.com/${repo.owner}/${repo.name}.git`;
   if (await exists(repo.localPath)) {
     try {
