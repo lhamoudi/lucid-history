@@ -18,6 +18,11 @@ jobs:
       - name: Install lucid-history
         run: npm install github:lhamoudi/lucid-history
 
+      - name: Configure git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
       - name: Run snapshots
         env:
           LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
