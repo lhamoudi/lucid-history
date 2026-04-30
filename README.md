@@ -123,7 +123,7 @@ Three ready-to-use workflows are provided:
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | [`daily-snapshot.yml`](.github/workflows/daily-snapshot.yml) | Schedule (Mon–Fri 09:00 UTC) + manual | Snapshots every doc in `docs.json` |
-| [`manual-snapshot.yml`](.github/workflows/manual-snapshot.yml) | Actions tab → Run workflow | Snapshot a single doc ID or all docs; supports `--dry-run` |
+| [`manual-snapshot.yml`](.github/workflows/manual-snapshot.yml) | Actions tab → Run workflow | Snapshot a single doc ID or all docs; supports `--dry-run`; auto-merge opt-in (default off) |
 | [`compare.yml`](.github/workflows/compare.yml) | Actions tab → Run workflow | Compare two live doc IDs; summary shown inline, PNGs uploaded as ZIP artifact |
 
 Fill in `<your-org>/<your-snapshots-repo>` in the snapshot workflows, then add these secrets:
