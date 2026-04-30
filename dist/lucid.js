@@ -18,13 +18,13 @@ export async function createFolder(name, parentId, apiKey = process.env.LUCID_AP
     const data = (await res.json());
     return data.id;
 }
-export async function copyDocument(sourceId, title, parentFolderId, product, apiKey = process.env.LUCID_API_KEY) {
+export async function copyDocument(sourceId, title, parentFolderId, apiKey = process.env.LUCID_API_KEY) {
     if (!apiKey)
         throw new Error('LUCID_API_KEY is not set');
-    const res = await fetch(`${LUCID_API_BASE}/documents`, {
+    const res = await fetch(`${LUCID_API_BASE}/documents/copy`, {
         method: 'POST',
         headers: { ...authHeaders(apiKey), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, product, parent: parentFolderId, template: sourceId }),
+        body: JSON.stringify({ title, template: sourceId, parent: parentFolderId }),
     });
     if (!res.ok)
         throw new Error(`Lucid document copy failed ${res.status}: ${await res.text()}`);

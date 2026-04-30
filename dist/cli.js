@@ -137,7 +137,7 @@ program
         console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
         const snapshotTitle = `SNAPSHOT_${doc.title}_${timestamp.slice(0, 10)}`;
         try {
-            const copied = await copyDocument(docId, snapshotTitle, folderId, doc.product);
+            const copied = await copyDocument(docId, snapshotTitle, folderId);
             console.log(`[${doc.title}] Lucid copy saved: ${copied.url}`);
             return { link: `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})` };
         }
