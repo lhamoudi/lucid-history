@@ -49,11 +49,13 @@ export async function commitAndPushBranch(
   branch: string,
   message: string,
   files: string[],
-): Promise<void> {
+): Promise<string> {
   await git.checkoutLocalBranch(branch);
   for (const f of files) await git.add(f);
   await git.commit(message);
   gitPush(localPath, branch);
+  const log = await git.log(['-1']);
+  return log.latest!.hash;
 }
 
 export async function openPullRequest(opts: {

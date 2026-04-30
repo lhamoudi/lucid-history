@@ -5,7 +5,7 @@ export type SnapshotsRepo = {
     localPath: string;
 };
 export declare function cloneOrOpen(repo: SnapshotsRepo, token?: string | undefined): Promise<SimpleGit>;
-export declare function commitAndPushBranch(git: SimpleGit, localPath: string, branch: string, message: string, files: string[]): Promise<void>;
+export declare function commitAndPushBranch(git: SimpleGit, localPath: string, branch: string, message: string, files: string[]): Promise<string>;
 export declare function openPullRequest(opts: {
     owner: string;
     repo: string;

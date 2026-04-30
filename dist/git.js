@@ -38,6 +38,8 @@ export async function commitAndPushBranch(git, localPath, branch, message, files
         await git.add(f);
     await git.commit(message);
     gitPush(localPath, branch);
+    const log = await git.log(['-1']);
+    return log.latest.hash;
 }
 export async function openPullRequest(opts) {
     const octokit = new Octokit({ auth: opts.token ?? process.env.GITHUB_TOKEN });

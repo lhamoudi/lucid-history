@@ -26,33 +26,44 @@ function isDateOnlyChange(pd: PageDiff): boolean {
   );
 }
 
+export type PageRender = {
+  pageTitle: string;
+  before: string | null;  // absolute path to the previous PNG, null if first render
+  after: string;          // absolute path to the newly written PNG
+};
+
 export async function renderChangedPages(opts: {
   documentId: string;
   changedPageIds: string[];
   pageTitles: Map<string, string>;
   timestamp: string;
   renderDir: string;
-}): Promise<string[]> {
-  const written: string[] = [];
+}): Promise<PageRender[]> {
+  const result: PageRender[] = [];
   for (const pageId of opts.changedPageIds) {
     const png = await exportPagePng(opts.documentId, pageId);
     const pageDir = join(opts.renderDir, pageId);
     await mkdir(pageDir, { recursive: true });
 
+    const existingPngs = (await readdir(pageDir).catch(() => [] as string[]))
+      .filter((f) => f.endsWith('.png'))
+      .sort();
+    const beforePath = existingPngs.length > 0 ? join(pageDir, existingPngs[existingPngs.length - 1]) : null;
+
     // Skip the write if the page renders identically to the most recent stored
     // PNG. Closes the gap where the JSON diff says "changed" but the rendered
     // output is visually identical (e.g. trailing-whitespace-only text edits).
-    const priorHash = await mostRecentHash(pageDir);
+    const priorHash = beforePath ? sha256(await readFile(beforePath)) : null;
     const newHash = sha256(png);
     if (priorHash === newHash) continue;
 
-    const title = opts.pageTitles.get(pageId);
-    const stem = title ? `${opts.timestamp}-${sanitize(title)}` : opts.timestamp;
-    const path = join(pageDir, `${stem}.png`);
-    await writeFile(path, png);
-    written.push(path);
+    const title = opts.pageTitles.get(pageId) ?? pageId;
+    const stem = `${opts.timestamp}-${sanitize(title)}`;
+    const afterPath = join(pageDir, `${stem}.png`);
+    await writeFile(afterPath, png);
+    result.push({ pageTitle: title, before: beforePath, after: afterPath });
   }
-  return written;
+  return result;
 }
 
 export async function renderComparedPages(opts: {

@@ -2,12 +2,12 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fetchDocument, createFolder, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
 import { summarizeDiff } from './summarize.js';
-import { renderChangedPages, renderComparedPages } from './renders.js';
+import { renderChangedPages, renderComparedPages, type PageRender } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import type { LucidDocument } from './types.js';
 
@@ -27,6 +27,16 @@ async function ensureSubfolder(
     await writeFile(folderIdPath, JSON.stringify({ folderId }, null, 2) + '\n');
     return { folderId, isNew: true };
   }
+}
+
+function buildImageSection(renders: Array<{ pageTitle: string; beforeUrl: string | null; afterUrl: string }>): string {
+  if (renders.length === 0) return '';
+  const sections = renders.map(({ pageTitle, beforeUrl, afterUrl }) => {
+    const before = beforeUrl ? `![${pageTitle} — before](${beforeUrl})` : '*(no prior render)*';
+    const after = `![${pageTitle} — after](${afterUrl})`;
+    return `### ${pageTitle}\n\n| Before | After |\n|:---:|:---:|\n| ${before} | ${after} |`;
+  });
+  return `\n\n---\n\n## Page renders\n\n${sections.join('\n\n')}`;
 }
 
 const program = new Command();
@@ -210,7 +220,7 @@ program
       const changedPages = changedPageIds(d);
       console.log(`[${doc.title}] ${changedPages.length} page(s) changed`);
 
-      let renders: string[] = [];
+      let renders: PageRender[] = [];
       if (opts.skipRenders) {
         console.log(`[${doc.title}] Skipping PNG renders`);
       } else {
@@ -236,19 +246,39 @@ program
       const { link, extraFiles } = await takeLucidSnapshot();
       summary += link;
 
-      const dailyPath = join(docDir, 'daily', `${timestamp.slice(0, 10)}.md`);
-      await mkdir(dirname(dailyPath), { recursive: true });
-      await writeFile(dailyPath, summary);
+      // Daily .md uses relative paths so images render when browsing the repo.
+      const dailyDir = join(docDir, 'daily');
+      const dailyPath = join(dailyDir, `${timestamp.slice(0, 10)}.md`);
+      const relativeImageSection = buildImageSection(
+        renders.map(({ pageTitle, before, after }) => ({
+          pageTitle,
+          beforeUrl: before ? relative(dailyDir, before) : null,
+          afterUrl: relative(dailyDir, after),
+        })),
+      );
+      await mkdir(dailyDir, { recursive: true });
+      await writeFile(dailyPath, summary + relativeImageSection);
 
       const branch = `snapshot/${docId}/${timestamp}`;
       console.log(`[${doc.title}] Committing to branch ${branch}...`);
-      await commitAndPushBranch(
+      const sha = await commitAndPushBranch(
         git,
         opts.local,
         branch,
         `chore: snapshot ${doc.title} @ ${timestamp}`,
-        [jsonPath, latestPath, dailyPath, ...renders, ...extraFiles],
+        [jsonPath, latestPath, dailyPath, ...renders.map((r) => r.after), ...extraFiles],
       );
+
+      // PR body uses absolute SHA-based URLs so images survive branch deletion.
+      const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${sha}`;
+      const absoluteImageSection = buildImageSection(
+        renders.map(({ pageTitle, before, after }) => ({
+          pageTitle,
+          beforeUrl: before ? `${rawBase}/${relative(opts.local, before)}` : null,
+          afterUrl: `${rawBase}/${relative(opts.local, after)}`,
+        })),
+      );
+
       console.log(`[${doc.title}] Opening PR...`);
       const { url, number } = await openPullRequest({
         owner,
@@ -256,7 +286,7 @@ program
         head: branch,
         base: 'main',
         title: `${doc.title}: ${changedPages.length} page(s) changed`,
-        body: summary,
+        body: summary + absoluteImageSection,
       });
       console.log(`[${doc.title}] PR opened: ${url}`);
       if (opts.autoMerge) {
