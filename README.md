@@ -11,7 +11,7 @@ Lucid REST API  →  fetch document JSON  →  normalize  →  semantic diff vs 
                                                               ↓
            render PNGs for changed pages  ←  yes  ←  +  Anthropic summary
                                                               ↓
-                                    commit {JSON, PNGs, daily summary}
+                                    commit {JSON, PNGs, summary.md}
                                                               ↓
                                                open PR on snapshots repo
                                                               ↓
@@ -90,7 +90,7 @@ npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --auto-m
 
 `--auto-merge` squash-merges the PR immediately after opening it, then deletes the snapshot branch. Skipped in `--dry-run`. Requires the `GITHUB_TOKEN` to have write access to the snapshots repo.
 
-`--lucid-folder <id>` copies the live document directly into the given Lucid folder, titled `SNAPSHOT_<doc-title>_<YYYY-MM-DD>`. A link is appended to both the daily `.md` file and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
+`--lucid-folder <id>` copies the live document directly into the given Lucid folder, titled `SNAPSHOT_<doc-title>_<YYYY-MM-DD>`. A link is appended to both the snapshot `summary.md` and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
 
 No prior snapshot? The first run creates an "initial snapshot" commit with no summary.
 No material changes since last snapshot? No commit, no PR — the command exits silently.
@@ -101,19 +101,18 @@ The tool writes to the snapshots repo with this structure:
 
 ```
 snapshots/
-  <doc-id>_<doc-title>/
+  <doc-title>___<doc-id>/
     json/
-      2026-04-22T10-30-00Z.json        written daily
+      2026-04-22T10-30-00Z.json        written on each run
       latest.json                       copy of most recent
     pages/
-      <page-id>/
-        2026-04-22T10-30-00Z.png        only when this page changed
-        HISTORY.md                       per-page timeline (v0.2)
-    daily/
-      2026-04-22.md                     the PR body, archived
+      <page-name>___<page-id>/
+        2026-04-22T10-30-00Z-Page_Name.png   only when this page changed
+    2026-04-22T10-30-00Z/
+      summary.md                        the PR body, archived
 ```
 
-A companion file per doc (`snapshots/<doc-id>/_index.md`) lists every page id seen, its current title, and its history. Page titles can change; page ids are stable — so the indexer is the translation layer between opaque ids and human-readable titles.
+Folder names use the convention `<human-readable-name>___<id>` so the identifier is always unambiguous. Both doc titles and page names are sanitized (`[^a-zA-Z0-9_-]` → `_`); IDs are appended verbatim after `___`.
 
 ## GitHub Actions
 
