@@ -21,23 +21,32 @@ function isDateOnlyChange(pd) {
 export async function renderChangedPages(opts) {
     const result = [];
     for (const pageId of opts.changedPageIds) {
+        const safePageTitle = sanitize(opts.pageTitles.get(pageId) ?? pageId);
+        const safePageId = sanitize(pageId);
+        const pageFileName = `${safePageTitle}___${safePageId}.png`;
+        const afterPath = join(opts.runDir, pageFileName);
+        // Search prior run dirs newest-first for a PNG matching this page's stable ID.
+        // The title portion of the filename may differ if the page was renamed.
+        const priorRunDirs = (await readdir(opts.docDir, { withFileTypes: true }).catch(() => []))
+            .filter(d => d.isDirectory() && d.name < opts.timestamp)
+            .map(d => d.name)
+            .sort()
+            .reverse();
+        let beforePath = null;
+        for (const runName of priorRunDirs) {
+            const files = await readdir(join(opts.docDir, runName)).catch(() => []);
+            const match = files.find(f => f.endsWith(`___${safePageId}.png`));
+            if (match) {
+                beforePath = join(opts.docDir, runName, match);
+                break;
+            }
+        }
         const png = await exportPagePng(opts.documentId, pageId);
-        const pageDir = join(opts.renderDir, pageId);
-        await mkdir(pageDir, { recursive: true });
-        const existingPngs = (await readdir(pageDir).catch(() => []))
-            .filter((f) => f.endsWith('.png'))
-            .sort();
-        const beforePath = existingPngs.length > 0 ? join(pageDir, existingPngs[existingPngs.length - 1]) : null;
-        // Skip the write if the page renders identically to the most recent stored
-        // PNG. Closes the gap where the JSON diff says "changed" but the rendered
-        // output is visually identical (e.g. trailing-whitespace-only text edits).
         const priorHash = beforePath ? sha256(await readFile(beforePath)) : null;
-        const newHash = sha256(png);
-        if (priorHash === newHash)
+        if (priorHash === sha256(png))
             continue;
         const title = opts.pageTitles.get(pageId) ?? pageId;
-        const stem = `${opts.timestamp}-${sanitize(title)}`;
-        const afterPath = join(pageDir, `${stem}.png`);
+        await mkdir(opts.runDir, { recursive: true });
         await writeFile(afterPath, png);
         result.push({ pageTitle: title, before: beforePath, after: afterPath });
     }
@@ -65,14 +74,6 @@ export async function renderComparedPages(opts) {
         written.push(beforePath, afterPath);
     }
     return written;
-}
-async function mostRecentHash(dir) {
-    const files = await readdir(dir).catch(() => []);
-    const pngs = files.filter((f) => f.endsWith('.png')).sort();
-    if (pngs.length === 0)
-        return null;
-    const latest = await readFile(join(dir, pngs[pngs.length - 1]));
-    return sha256(latest);
 }
 function sha256(data) {
     return createHash('sha256').update(data).digest('hex');

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { Command } from 'commander';
-import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, rm, readdir } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { fetchDocument, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
@@ -135,9 +135,15 @@ program
       console.log(`[${doc.title}] Fetched — ${doc.pages.length} page(s)`);
 
       const safeTitle = doc.title.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const docDir = join(opts.local, 'snapshots', `${safeTitle}___${docId}`);
-      const jsonPath = join(docDir, 'json', `${timestamp}.json`);
-      const latestPath = join(docDir, 'json', 'latest.json');
+      // Locate the doc folder by stable ID so renames don't orphan history.
+      const snapshotsRoot = join(opts.local, 'snapshots');
+      const existingDocFolder = await readdir(snapshotsRoot, { withFileTypes: true })
+        .then(entries => entries.find(d => d.isDirectory() && d.name.endsWith(`___${docId}`))?.name)
+        .catch(() => undefined);
+      const docDir = join(snapshotsRoot, existingDocFolder ?? `${safeTitle}___${docId}`);
+      const snapshotDir = join(docDir, timestamp);
+      const jsonPath = join(snapshotDir, 'snapshot.json');
+      const latestPath = join(docDir, 'latest.json');
 
       let base: LucidDocument | null = null;
       try {
@@ -215,7 +221,8 @@ program
           changedPageIds: changedPages,
           pageTitles: new Map(doc.pages.map((p) => [p.id, p.title])),
           timestamp,
-          renderDir: join(docDir, 'pages'),
+          runDir: snapshotDir,
+          docDir,
         });
         console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
       }
@@ -231,7 +238,6 @@ program
       const { link } = await takeLucidSnapshot();
       summary += link;
 
-      const snapshotDir = join(docDir, timestamp);
       const summaryPath = join(snapshotDir, 'summary.md');
       const relativeImageSection = buildImageSection(
         renders.map(({ pageTitle, before, after }) => ({

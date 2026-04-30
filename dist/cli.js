@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import 'dotenv/config';
 import { Command } from 'commander';
-import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, rm, readdir } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { fetchDocument, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
@@ -113,10 +113,16 @@ program
     const doc = await fetchDocument(docId);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5) + 'Z';
     console.log(`[${doc.title}] Fetched — ${doc.pages.length} page(s)`);
-    const safeTitle = doc.title.replace(/[/\\:]/g, '-');
-    const docDir = join(opts.local, 'snapshots', `${docId}_${safeTitle}`);
-    const jsonPath = join(docDir, 'json', `${timestamp}.json`);
-    const latestPath = join(docDir, 'json', 'latest.json');
+    const safeTitle = doc.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+    // Locate the doc folder by stable ID so renames don't orphan history.
+    const snapshotsRoot = join(opts.local, 'snapshots');
+    const existingDocFolder = await readdir(snapshotsRoot, { withFileTypes: true })
+        .then(entries => entries.find(d => d.isDirectory() && d.name.endsWith(`___${docId}`))?.name)
+        .catch(() => undefined);
+    const docDir = join(snapshotsRoot, existingDocFolder ?? `${safeTitle}___${docId}`);
+    const snapshotDir = join(docDir, timestamp);
+    const jsonPath = join(snapshotDir, 'snapshot.json');
+    const latestPath = join(docDir, 'latest.json');
     let base = null;
     try {
         base = JSON.parse(await readFile(latestPath, 'utf8'));
@@ -192,7 +198,8 @@ program
             changedPageIds: changedPages,
             pageTitles: new Map(doc.pages.map((p) => [p.id, p.title])),
             timestamp,
-            renderDir: join(docDir, 'pages'),
+            runDir: snapshotDir,
+            docDir,
         });
         console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
     }
@@ -204,19 +211,17 @@ program
     }
     const { link } = await takeLucidSnapshot();
     summary += link;
-    // Daily .md uses relative paths so images render when browsing the repo.
-    const dailyDir = join(docDir, 'daily');
-    const dailyPath = join(dailyDir, `${timestamp.slice(0, 10)}.md`);
+    const summaryPath = join(snapshotDir, 'summary.md');
     const relativeImageSection = buildImageSection(renders.map(({ pageTitle, before, after }) => ({
         pageTitle,
-        beforeUrl: before ? relative(dailyDir, before) : null,
-        afterUrl: relative(dailyDir, after),
+        beforeUrl: before ? relative(snapshotDir, before) : null,
+        afterUrl: relative(snapshotDir, after),
     })));
-    await mkdir(dailyDir, { recursive: true });
-    await writeFile(dailyPath, summary + relativeImageSection);
+    await mkdir(snapshotDir, { recursive: true });
+    await writeFile(summaryPath, summary + relativeImageSection);
     const branch = `snapshot/${docId}/${timestamp}`;
     console.log(`[${doc.title}] Committing to branch ${branch}...`);
-    const sha = await commitAndPushBranch(git, opts.local, branch, `chore: snapshot ${doc.title} @ ${timestamp}`, [jsonPath, latestPath, dailyPath, ...renders.map((r) => r.after)]);
+    const sha = await commitAndPushBranch(git, opts.local, branch, `chore: snapshot ${doc.title} @ ${timestamp}`, [jsonPath, latestPath, summaryPath, ...renders.map((r) => r.after)]);
     // PR body uses absolute SHA-based URLs so images survive branch deletion.
     const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${sha}`;
     const absoluteImageSection = buildImageSection(renders.map(({ pageTitle, before, after }) => ({

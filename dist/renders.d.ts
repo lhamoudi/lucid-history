@@ -9,7 +9,8 @@ export declare function renderChangedPages(opts: {
     changedPageIds: string[];
     pageTitles: Map<string, string>;
     timestamp: string;
-    renderDir: string;
+    runDir: string;
+    docDir: string;
 }): Promise<PageRender[]>;
 export declare function renderComparedPages(opts: {
     baseDocumentId: string;
