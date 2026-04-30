@@ -134,8 +134,8 @@ program
         new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5) + 'Z';
       console.log(`[${doc.title}] Fetched — ${doc.pages.length} page(s)`);
 
-      const safeTitle = doc.title.replace(/[/\\:]/g, '-');
-      const docDir = join(opts.local, 'snapshots', `${docId}_${safeTitle}`);
+      const safeTitle = doc.title.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const docDir = join(opts.local, 'snapshots', `${safeTitle}___${docId}`);
       const jsonPath = join(docDir, 'json', `${timestamp}.json`);
       const latestPath = join(docDir, 'json', 'latest.json');
 

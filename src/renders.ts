@@ -44,7 +44,7 @@ export async function renderChangedPages(opts: {
     const png = await exportPagePng(opts.documentId, pageId);
     const safePageTitle = sanitize(opts.pageTitles.get(pageId) ?? pageId);
     const safePageId = sanitize(pageId);
-    const pageDir = join(opts.renderDir, `${safePageTitle}_${safePageId}`);
+    const pageDir = join(opts.renderDir, `${safePageTitle}___${safePageId}`);
     await mkdir(pageDir, { recursive: true });
 
     const existingPngs = (await readdir(pageDir).catch(() => [] as string[]))
