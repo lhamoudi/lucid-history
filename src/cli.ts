@@ -156,7 +156,7 @@ program
         if (!opts.lucidFolder) return { link: '' };
         const folderId = parseInt(opts.lucidFolder, 10);
         console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
-        const snapshotTitle = `SNAPSHOT_${timestamp.slice(0, 10)}_${doc.title}`;
+        const snapshotTitle = `SNAPSHOT_${doc.title}_${timestamp.slice(0, 10)}`;
         const copied = await copyDocument(docId, snapshotTitle, folderId, doc.product);
         console.log(`[${doc.title}] Lucid copy saved: ${copied.url}`);
         return { link: `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})` };
