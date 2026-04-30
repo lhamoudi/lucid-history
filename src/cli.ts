@@ -8,7 +8,7 @@ import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
 import { summarizeDiff } from './summarize.js';
 import { renderChangedPages, renderComparedPages } from './renders.js';
-import { cloneOrOpen, commitAndPushBranch, openPullRequest } from './git.js';
+import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import type { LucidDocument } from './types.js';
 
 async function ensureSubfolder(
@@ -124,10 +124,11 @@ program
   .option('--dry-run', 'Skip git push and PR creation', false)
   .option('--skip-renders', 'Skip PNG exports (useful while Lucid PNG endpoint is unverified)', false)
   .option('--lucid-folder <id>', 'Lucid folder ID to save snapshot copies into (e.g. __AUTOMATED_SNAPSHOTS)')
+  .option('--auto-merge', 'Automatically merge the PR after opening it', false)
   .action(
     async (
       docId: string,
-      opts: { repo: string; local: string; dryRun: boolean; skipRenders: boolean; lucidFolder?: string },
+      opts: { repo: string; local: string; dryRun: boolean; skipRenders: boolean; lucidFolder?: string; autoMerge: boolean },
     ) => {
       const [owner, name] = opts.repo.split('/');
       const git = await cloneOrOpen({ owner, name, localPath: opts.local });
@@ -172,7 +173,7 @@ program
           latestPath,
           ...extraFiles,
         ]);
-        const url = await openPullRequest({
+        const { url, number } = await openPullRequest({
           owner,
           repo: name,
           head: branch,
@@ -181,6 +182,10 @@ program
           body: `Initial snapshot; no diff available.${link}`,
         });
         console.log(`Opened PR: ${url}`);
+        if (opts.autoMerge) {
+          await mergePullRequest({ owner, repo: name, pullNumber: number });
+          console.log('Auto-merged.');
+        }
         return;
       }
 
@@ -222,7 +227,7 @@ program
         `chore: snapshot ${doc.title} @ ${timestamp}`,
         [jsonPath, latestPath, dailyPath, ...renders, ...extraFiles],
       );
-      const url = await openPullRequest({
+      const { url, number } = await openPullRequest({
         owner,
         repo: name,
         head: branch,
@@ -231,6 +236,10 @@ program
         body: summary,
       });
       console.log(`Opened PR: ${url}`);
+      if (opts.autoMerge) {
+        await mergePullRequest({ owner, repo: name, pullNumber: number });
+        console.log('Auto-merged.');
+      }
     },
   );
 

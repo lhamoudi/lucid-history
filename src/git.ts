@@ -64,7 +64,7 @@ export async function openPullRequest(opts: {
   title: string;
   body: string;
   token?: string;
-}): Promise<string> {
+}): Promise<{ url: string; number: number }> {
   const octokit = new Octokit({ auth: opts.token ?? process.env.GITHUB_TOKEN });
   const pr = await octokit.pulls.create({
     owner: opts.owner,
@@ -74,7 +74,22 @@ export async function openPullRequest(opts: {
     title: opts.title,
     body: opts.body,
   });
-  return pr.data.html_url;
+  return { url: pr.data.html_url, number: pr.data.number };
+}
+
+export async function mergePullRequest(opts: {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  token?: string;
+}): Promise<void> {
+  const octokit = new Octokit({ auth: opts.token ?? process.env.GITHUB_TOKEN });
+  await octokit.pulls.merge({
+    owner: opts.owner,
+    repo: opts.repo,
+    pull_number: opts.pullNumber,
+    merge_method: 'squash',
+  });
 }
 
 async function ensureMain(git: SimpleGit, localPath: string): Promise<void> {

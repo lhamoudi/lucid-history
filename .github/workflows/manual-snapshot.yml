@@ -44,8 +44,8 @@ jobs:
           fi
           if [ "${{ inputs.document }}" = "all" ]; then
             for id in $(jq -r '.[].id' docs.json); do
-              npx lucid-history snapshot "$id" --repo <your-org>/<your-snapshots-repo> --lucid-folder <your-automated-snapshots-folder-id> $DRY_RUN_FLAG
+              npx lucid-history snapshot "$id" --repo <your-org>/<your-snapshots-repo> --lucid-folder <your-automated-snapshots-folder-id> --auto-merge $DRY_RUN_FLAG
             done
           else
-            npx lucid-history snapshot "${{ inputs.document }}" --repo <your-org>/<your-snapshots-repo> --lucid-folder <your-automated-snapshots-folder-id> $DRY_RUN_FLAG
+            npx lucid-history snapshot "${{ inputs.document }}" --repo <your-org>/<your-snapshots-repo> --lucid-folder <your-automated-snapshots-folder-id> --auto-merge $DRY_RUN_FLAG
           fi
