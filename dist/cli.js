@@ -110,9 +110,12 @@ program
     .option('--auto-merge', 'Automatically merge the PR after opening it', false)
     .action(async (docId, opts) => {
     const [owner, name] = opts.repo.split('/');
+    console.log(`[${docId}] Cloning/opening snapshots repo...`);
     const git = await cloneOrOpen({ owner, name, localPath: opts.local });
+    console.log(`[${docId}] Fetching document from Lucid...`);
     const doc = await fetchDocument(docId);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5) + 'Z';
+    console.log(`[${doc.title}] Fetched — ${doc.pages.length} page(s)`);
     const docDir = join(opts.local, 'snapshots', docId);
     const jsonPath = join(docDir, 'json', `${timestamp}.json`);
     const latestPath = join(docDir, 'json', 'latest.json');
@@ -120,9 +123,11 @@ program
     let base = null;
     try {
         base = JSON.parse(await readFile(latestPath, 'utf8'));
+        console.log(`[${doc.title}] Previous snapshot loaded`);
     }
     catch {
         base = null;
+        console.log(`[${doc.title}] No previous snapshot found`);
     }
     await mkdir(dirname(jsonPath), { recursive: true });
     const normalized = normalize(doc);
@@ -132,23 +137,27 @@ program
         if (!opts.lucidFolder)
             return { link: '', extraFiles: [] };
         const parentFolderId = parseInt(opts.lucidFolder, 10);
+        console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
         const { folderId, isNew } = await ensureSubfolder(folderIdPath, docId, doc.title, parentFolderId);
         const snapshotTitle = `SNAPSHOT_${timestamp.slice(0, 10)}_${doc.title}`;
         const copied = await copyDocument(docId, snapshotTitle, folderId, doc.product);
+        console.log(`[${doc.title}] Lucid copy saved: ${copied.url}`);
         const link = `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})`;
         return { link, extraFiles: isNew ? [folderIdPath] : [] };
     }
     if (!base) {
-        console.log('No prior snapshot; initial commit only.');
+        console.log(`[${doc.title}] Initial snapshot — no diff available`);
         if (opts.dryRun)
             return;
         const { link, extraFiles } = await takeLucidSnapshot();
         const branch = `snapshot/${docId}/${timestamp}`;
+        console.log(`[${doc.title}] Committing to branch ${branch}...`);
         await commitAndPushBranch(git, opts.local, branch, `chore: initial snapshot of ${doc.title}`, [
             jsonPath,
             latestPath,
             ...extraFiles,
         ]);
+        console.log(`[${doc.title}] Opening PR...`);
         const { url, number } = await openPullRequest({
             owner,
             repo: name,
@@ -157,27 +166,37 @@ program
             title: `Initial snapshot: ${doc.title}`,
             body: `Initial snapshot; no diff available.${link}`,
         });
-        console.log(`Opened PR: ${url}`);
+        console.log(`[${doc.title}] PR opened: ${url}`);
         if (opts.autoMerge) {
+            console.log(`[${doc.title}] Merging PR and deleting branch...`);
             await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
-            console.log('Auto-merged and branch deleted.');
+            console.log(`[${doc.title}] Done.`);
         }
         return;
     }
     const d = enrichLinesWithShapeText(diff(base, doc), doc);
     if (isEmpty(d)) {
-        console.log('No material changes; skipping PR.');
+        console.log(`[${doc.title}] No material changes — skipping PR`);
         return;
     }
-    const renders = opts.skipRenders
-        ? []
-        : await renderChangedPages({
+    const changedPages = changedPageIds(d);
+    console.log(`[${doc.title}] ${changedPages.length} page(s) changed`);
+    let renders = [];
+    if (opts.skipRenders) {
+        console.log(`[${doc.title}] Skipping PNG renders`);
+    }
+    else {
+        console.log(`[${doc.title}] Rendering ${changedPages.length} page(s)...`);
+        renders = await renderChangedPages({
             documentId: docId,
-            changedPageIds: changedPageIds(d),
+            changedPageIds: changedPages,
             pageTitles: new Map(doc.pages.map((p) => [p.id, p.title])),
             timestamp,
             renderDir: join(docDir, 'pages'),
         });
+        console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
+    }
+    console.log(`[${doc.title}] Generating AI summary...`);
     let summary = await summarizeDiff(doc.title, d);
     if (opts.dryRun) {
         console.log(summary);
@@ -189,19 +208,22 @@ program
     await mkdir(dirname(dailyPath), { recursive: true });
     await writeFile(dailyPath, summary);
     const branch = `snapshot/${docId}/${timestamp}`;
+    console.log(`[${doc.title}] Committing to branch ${branch}...`);
     await commitAndPushBranch(git, opts.local, branch, `chore: snapshot ${doc.title} @ ${timestamp}`, [jsonPath, latestPath, dailyPath, ...renders, ...extraFiles]);
+    console.log(`[${doc.title}] Opening PR...`);
     const { url, number } = await openPullRequest({
         owner,
         repo: name,
         head: branch,
         base: 'main',
-        title: `${doc.title}: ${changedPageIds(d).length} page(s) changed`,
+        title: `${doc.title}: ${changedPages.length} page(s) changed`,
         body: summary,
     });
-    console.log(`Opened PR: ${url}`);
+    console.log(`[${doc.title}] PR opened: ${url}`);
     if (opts.autoMerge) {
+        console.log(`[${doc.title}] Merging PR and deleting branch...`);
         await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
-        console.log('Auto-merged and branch deleted.');
+        console.log(`[${doc.title}] Done.`);
     }
 });
 program.parseAsync();
