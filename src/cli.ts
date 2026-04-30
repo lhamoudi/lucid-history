@@ -231,18 +231,17 @@ program
       const { link } = await takeLucidSnapshot();
       summary += link;
 
-      // Daily .md uses relative paths so images render when browsing the repo.
-      const dailyDir = join(docDir, 'daily');
-      const dailyPath = join(dailyDir, `${timestamp.slice(0, 10)}.md`);
+      const snapshotDir = join(docDir, timestamp);
+      const summaryPath = join(snapshotDir, 'summary.md');
       const relativeImageSection = buildImageSection(
         renders.map(({ pageTitle, before, after }) => ({
           pageTitle,
-          beforeUrl: before ? relative(dailyDir, before) : null,
-          afterUrl: relative(dailyDir, after),
+          beforeUrl: before ? relative(snapshotDir, before) : null,
+          afterUrl: relative(snapshotDir, after),
         })),
       );
-      await mkdir(dailyDir, { recursive: true });
-      await writeFile(dailyPath, summary + relativeImageSection);
+      await mkdir(snapshotDir, { recursive: true });
+      await writeFile(summaryPath, summary + relativeImageSection);
 
       const branch = `snapshot/${docId}/${timestamp}`;
       console.log(`[${doc.title}] Committing to branch ${branch}...`);
@@ -251,7 +250,7 @@ program
         opts.local,
         branch,
         `chore: snapshot ${doc.title} @ ${timestamp}`,
-        [jsonPath, latestPath, dailyPath, ...renders.map((r) => r.after)],
+        [jsonPath, latestPath, summaryPath, ...renders.map((r) => r.after)],
       );
 
       // PR body uses absolute SHA-based URLs so images survive branch deletion.
