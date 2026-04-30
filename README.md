@@ -101,7 +101,7 @@ The tool writes to the snapshots repo with this structure:
 
 ```
 snapshots/
-  <doc-id>/
+  <doc-id>_<doc-title>/
     json/
       2026-04-22T10-30-00Z.json        written daily
       latest.json                       copy of most recent

@@ -113,7 +113,8 @@ program
     const doc = await fetchDocument(docId);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5) + 'Z';
     console.log(`[${doc.title}] Fetched — ${doc.pages.length} page(s)`);
-    const docDir = join(opts.local, 'snapshots', docId);
+    const safeTitle = doc.title.replace(/[/\\:]/g, '-');
+    const docDir = join(opts.local, 'snapshots', `${docId}_${safeTitle}`);
     const jsonPath = join(docDir, 'json', `${timestamp}.json`);
     const latestPath = join(docDir, 'json', 'latest.json');
     let base = null;
