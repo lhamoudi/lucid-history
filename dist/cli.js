@@ -3,25 +3,12 @@ import 'dotenv/config';
 import { Command } from 'commander';
 import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
-import { fetchDocument, createFolder, copyDocument } from './lucid.js';
+import { fetchDocument, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
 import { summarizeDiff } from './summarize.js';
 import { renderChangedPages, renderComparedPages } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
-async function ensureSubfolder(folderIdPath, docId, docTitle, parentFolderId) {
-    try {
-        const cached = JSON.parse(await readFile(folderIdPath, 'utf8'));
-        return { folderId: cached.folderId, isNew: false };
-    }
-    catch {
-        const safeName = docTitle.replace(/[/\\:*?"<>|]/g, '-').trim();
-        const folderId = await createFolder(`${docId}_${safeName}`, parentFolderId);
-        await mkdir(dirname(folderIdPath), { recursive: true });
-        await writeFile(folderIdPath, JSON.stringify({ folderId }, null, 2) + '\n');
-        return { folderId, isNew: true };
-    }
-}
 function buildImageSection(renders) {
     if (renders.length === 0)
         return '';
@@ -129,7 +116,6 @@ program
     const docDir = join(opts.local, 'snapshots', docId);
     const jsonPath = join(docDir, 'json', `${timestamp}.json`);
     const latestPath = join(docDir, 'json', 'latest.json');
-    const folderIdPath = join(docDir, '_lucid_snapshot_folder.json');
     let base = null;
     try {
         base = JSON.parse(await readFile(latestPath, 'utf8'));
@@ -145,27 +131,24 @@ program
     await writeFile(latestPath, normalized);
     async function takeLucidSnapshot() {
         if (!opts.lucidFolder)
-            return { link: '', extraFiles: [] };
-        const parentFolderId = parseInt(opts.lucidFolder, 10);
+            return { link: '' };
+        const folderId = parseInt(opts.lucidFolder, 10);
         console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
-        const { folderId, isNew } = await ensureSubfolder(folderIdPath, docId, doc.title, parentFolderId);
         const snapshotTitle = `SNAPSHOT_${timestamp.slice(0, 10)}_${doc.title}`;
         const copied = await copyDocument(docId, snapshotTitle, folderId, doc.product);
         console.log(`[${doc.title}] Lucid copy saved: ${copied.url}`);
-        const link = `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})`;
-        return { link, extraFiles: isNew ? [folderIdPath] : [] };
+        return { link: `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})` };
     }
     if (!base) {
         console.log(`[${doc.title}] Initial snapshot — no diff available`);
         if (opts.dryRun)
             return;
-        const { link, extraFiles } = await takeLucidSnapshot();
+        const { link } = await takeLucidSnapshot();
         const branch = `snapshot/${docId}/${timestamp}`;
         console.log(`[${doc.title}] Committing to branch ${branch}...`);
         await commitAndPushBranch(git, opts.local, branch, `chore: initial snapshot of ${doc.title}`, [
             jsonPath,
             latestPath,
-            ...extraFiles,
         ]);
         console.log(`[${doc.title}] Opening PR...`);
         const { url, number } = await openPullRequest({
@@ -212,7 +195,7 @@ program
         console.log(summary);
         return;
     }
-    const { link, extraFiles } = await takeLucidSnapshot();
+    const { link } = await takeLucidSnapshot();
     summary += link;
     // Daily .md uses relative paths so images render when browsing the repo.
     const dailyDir = join(docDir, 'daily');
@@ -226,7 +209,7 @@ program
     await writeFile(dailyPath, summary + relativeImageSection);
     const branch = `snapshot/${docId}/${timestamp}`;
     console.log(`[${doc.title}] Committing to branch ${branch}...`);
-    const sha = await commitAndPushBranch(git, opts.local, branch, `chore: snapshot ${doc.title} @ ${timestamp}`, [jsonPath, latestPath, dailyPath, ...renders.map((r) => r.after), ...extraFiles]);
+    const sha = await commitAndPushBranch(git, opts.local, branch, `chore: snapshot ${doc.title} @ ${timestamp}`, [jsonPath, latestPath, dailyPath, ...renders.map((r) => r.after)]);
     // PR body uses absolute SHA-based URLs so images survive branch deletion.
     const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${sha}`;
     const absoluteImageSection = buildImageSection(renders.map(({ pageTitle, before, after }) => ({

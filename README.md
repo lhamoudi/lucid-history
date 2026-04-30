@@ -90,7 +90,7 @@ npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --auto-m
 
 `--auto-merge` squash-merges the PR immediately after opening it, then deletes the snapshot branch. Skipped in `--dry-run`. Requires the `GITHUB_TOKEN` to have write access to the snapshots repo.
 
-`--lucid-folder <id>` copies the live document into a subfolder of the given Lucid folder. The subfolder is named `<doc-id>_<doc-title>` and is created automatically on first use; its ID is persisted in the snapshots repo so subsequent runs reuse it. The copy is titled `SNAPSHOT_<YYYY-MM-DD>_<doc-title>` and a link is appended to both the daily `.md` file and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
+`--lucid-folder <id>` copies the live document directly into the given Lucid folder, titled `SNAPSHOT_<YYYY-MM-DD>_<doc-title>`. A link is appended to both the daily `.md` file and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
 
 No prior snapshot? The first run creates an "initial snapshot" commit with no summary.
 No material changes since last snapshot? No commit, no PR — the command exits silently.
@@ -102,7 +102,6 @@ The tool writes to the snapshots repo with this structure:
 ```
 snapshots/
   <doc-id>/
-    _lucid_snapshot_folder.json         Lucid subfolder ID (committed on first --lucid-folder run)
     json/
       2026-04-22T10-30-00Z.json        written daily
       latest.json                       copy of most recent
