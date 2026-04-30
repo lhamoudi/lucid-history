@@ -78,9 +78,12 @@ Fetches both documents live and prints an AI-generated summary of structural dif
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --dry-run
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --skip-renders
+npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --lucid-folder <folder-id>
 ```
 
 `--skip-renders` bypasses PNG export — useful while the Lucid PNG endpoint is being validated.
+
+`--lucid-folder <id>` copies the live document into a subfolder of the given Lucid folder. The subfolder is named `<doc-id>_<doc-title>` and is created automatically on first use; its ID is persisted in the snapshots repo so subsequent runs reuse it. The copy is titled `SNAPSHOT_<YYYY-MM-DD>_<doc-title>` and a link is appended to both the daily `.md` file and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
 
 No prior snapshot? The first run creates an "initial snapshot" commit with no summary.
 No material changes since last snapshot? No commit, no PR — the command exits silently.

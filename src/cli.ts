@@ -3,13 +3,31 @@ import 'dotenv/config';
 import { Command } from 'commander';
 import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { fetchDocument } from './lucid.js';
+import { fetchDocument, createFolder, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
 import { summarizeDiff } from './summarize.js';
 import { renderChangedPages, renderComparedPages } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest } from './git.js';
 import type { LucidDocument } from './types.js';
+
+async function ensureSubfolder(
+  folderIdPath: string,
+  docId: string,
+  docTitle: string,
+  parentFolderId: number,
+): Promise<{ folderId: number; isNew: boolean }> {
+  try {
+    const cached = JSON.parse(await readFile(folderIdPath, 'utf8')) as { folderId: number };
+    return { folderId: cached.folderId, isNew: false };
+  } catch {
+    const safeName = docTitle.replace(/[/\\:*?"<>|]/g, '-').trim();
+    const folderId = await createFolder(`${docId}_${safeName}`, parentFolderId);
+    await mkdir(dirname(folderIdPath), { recursive: true });
+    await writeFile(folderIdPath, JSON.stringify({ folderId }, null, 2) + '\n');
+    return { folderId, isNew: true };
+  }
+}
 
 const program = new Command();
 program
@@ -105,10 +123,11 @@ program
   .option('--local <path>', 'Local clone path', '/tmp/lucid-history-snapshots')
   .option('--dry-run', 'Skip git push and PR creation', false)
   .option('--skip-renders', 'Skip PNG exports (useful while Lucid PNG endpoint is unverified)', false)
+  .option('--lucid-folder <id>', 'Lucid folder ID to save snapshot copies into (e.g. __AUTOMATED_SNAPSHOTS)')
   .action(
     async (
       docId: string,
-      opts: { repo: string; local: string; dryRun: boolean; skipRenders: boolean },
+      opts: { repo: string; local: string; dryRun: boolean; skipRenders: boolean; lucidFolder?: string },
     ) => {
       const [owner, name] = opts.repo.split('/');
       const git = await cloneOrOpen({ owner, name, localPath: opts.local });
@@ -119,6 +138,7 @@ program
       const docDir = join(opts.local, 'snapshots', docId);
       const jsonPath = join(docDir, 'json', `${timestamp}.json`);
       const latestPath = join(docDir, 'json', 'latest.json');
+      const folderIdPath = join(docDir, '_lucid_snapshot_folder.json');
 
       let base: LucidDocument | null = null;
       try {
@@ -132,13 +152,25 @@ program
       await writeFile(jsonPath, normalized);
       await writeFile(latestPath, normalized);
 
+      async function takeLucidSnapshot(): Promise<{ link: string; extraFiles: string[] }> {
+        if (!opts.lucidFolder) return { link: '', extraFiles: [] };
+        const parentFolderId = parseInt(opts.lucidFolder, 10);
+        const { folderId, isNew } = await ensureSubfolder(folderIdPath, docId, doc.title, parentFolderId);
+        const snapshotTitle = `SNAPSHOT_${timestamp.slice(0, 10)}_${doc.title}`;
+        const copied = await copyDocument(docId, snapshotTitle, folderId, doc.product);
+        const link = `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})`;
+        return { link, extraFiles: isNew ? [folderIdPath] : [] };
+      }
+
       if (!base) {
         console.log('No prior snapshot; initial commit only.');
         if (opts.dryRun) return;
+        const { link, extraFiles } = await takeLucidSnapshot();
         const branch = `snapshot/${docId}/${timestamp}`;
         await commitAndPushBranch(git, opts.local, branch, `chore: initial snapshot of ${doc.title}`, [
           jsonPath,
           latestPath,
+          ...extraFiles,
         ]);
         const url = await openPullRequest({
           owner,
@@ -146,7 +178,7 @@ program
           head: branch,
           base: 'main',
           title: `Initial snapshot: ${doc.title}`,
-          body: 'Initial snapshot; no diff available.',
+          body: `Initial snapshot; no diff available.${link}`,
         });
         console.log(`Opened PR: ${url}`);
         return;
@@ -168,22 +200,27 @@ program
             renderDir: join(docDir, 'pages'),
           });
 
-      const summary = await summarizeDiff(doc.title, d);
-      const dailyPath = join(docDir, 'daily', `${timestamp.slice(0, 10)}.md`);
-      await mkdir(dirname(dailyPath), { recursive: true });
-      await writeFile(dailyPath, summary);
+      let summary = await summarizeDiff(doc.title, d);
 
       if (opts.dryRun) {
         console.log(summary);
         return;
       }
+
+      const { link, extraFiles } = await takeLucidSnapshot();
+      summary += link;
+
+      const dailyPath = join(docDir, 'daily', `${timestamp.slice(0, 10)}.md`);
+      await mkdir(dirname(dailyPath), { recursive: true });
+      await writeFile(dailyPath, summary);
+
       const branch = `snapshot/${docId}/${timestamp}`;
       await commitAndPushBranch(
         git,
         opts.local,
         branch,
         `chore: snapshot ${doc.title} @ ${timestamp}`,
-        [jsonPath, latestPath, dailyPath, ...renders],
+        [jsonPath, latestPath, dailyPath, ...renders, ...extraFiles],
       );
       const url = await openPullRequest({
         owner,
