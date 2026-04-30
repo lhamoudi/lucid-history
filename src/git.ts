@@ -81,6 +81,7 @@ export async function mergePullRequest(opts: {
   owner: string;
   repo: string;
   pullNumber: number;
+  branch?: string;
   token?: string;
 }): Promise<void> {
   const octokit = new Octokit({ auth: opts.token ?? process.env.GITHUB_TOKEN });
@@ -90,6 +91,13 @@ export async function mergePullRequest(opts: {
     pull_number: opts.pullNumber,
     merge_method: 'squash',
   });
+  if (opts.branch) {
+    await octokit.git.deleteRef({
+      owner: opts.owner,
+      repo: opts.repo,
+      ref: `heads/${opts.branch}`,
+    });
+  }
 }
 
 async function ensureMain(git: SimpleGit, localPath: string): Promise<void> {

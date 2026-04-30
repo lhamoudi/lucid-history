@@ -14,6 +14,10 @@ Lucid REST API  →  fetch document JSON  →  normalize  →  semantic diff vs 
                                     commit {JSON, PNGs, daily summary}
                                                               ↓
                                                open PR on snapshots repo
+                                                              ↓
+                            copy doc to Lucid __AUTOMATED_SNAPSHOTS folder
+                                                              ↓
+                                          squash-merge PR + delete branch
 ```
 
 The semantic diff keys shapes and lines by their stable Lucid IDs and reports: added/removed/renamed pages, added/removed/text-changed/class-changed shapes, and added/removed/rewired/label-changed lines. Layout coordinates are not in the source data at all, so pure "drag this block" edits produce no diff.
@@ -84,7 +88,7 @@ npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --auto-m
 
 `--skip-renders` bypasses PNG export — useful while the Lucid PNG endpoint is being validated.
 
-`--auto-merge` squash-merges the PR immediately after opening it. Skipped in `--dry-run`. Requires the `GITHUB_TOKEN` to have write access to the snapshots repo.
+`--auto-merge` squash-merges the PR immediately after opening it, then deletes the snapshot branch. Skipped in `--dry-run`. Requires the `GITHUB_TOKEN` to have write access to the snapshots repo.
 
 `--lucid-folder <id>` copies the live document into a subfolder of the given Lucid folder. The subfolder is named `<doc-id>_<doc-title>` and is created automatically on first use; its ID is persisted in the snapshots repo so subsequent runs reuse it. The copy is titled `SNAPSHOT_<YYYY-MM-DD>_<doc-title>` and a link is appended to both the daily `.md` file and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
 
@@ -98,6 +102,7 @@ The tool writes to the snapshots repo with this structure:
 ```
 snapshots/
   <doc-id>/
+    _lucid_snapshot_folder.json         Lucid subfolder ID (committed on first --lucid-folder run)
     json/
       2026-04-22T10-30-00Z.json        written daily
       latest.json                       copy of most recent
@@ -145,6 +150,8 @@ npm run build
 - [x] PNG rendering with hash-dedupe
 - [x] Git + PR flow via simple-git and @octokit/rest
 - [x] GitHub Actions workflows (daily, manual, compare)
+- [x] Lucid snapshot copies via `--lucid-folder`
+- [x] Auto-merge + branch deletion via `--auto-merge`
 - [ ] `HISTORY.md` / `_index.md` auto-update on each snapshot (functions exist in `src/indexer.ts`; not yet wired into `snapshot`)
 - [ ] Lucid PNG export endpoint path verified against Lucid docs
 

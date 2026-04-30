@@ -183,8 +183,8 @@ program
         });
         console.log(`Opened PR: ${url}`);
         if (opts.autoMerge) {
-          await mergePullRequest({ owner, repo: name, pullNumber: number });
-          console.log('Auto-merged.');
+          await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
+          console.log('Auto-merged and branch deleted.');
         }
         return;
       }
@@ -237,8 +237,8 @@ program
       });
       console.log(`Opened PR: ${url}`);
       if (opts.autoMerge) {
-        await mergePullRequest({ owner, repo: name, pullNumber: number });
-        console.log('Auto-merged.');
+        await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
+        console.log('Auto-merged and branch deleted.');
       }
     },
   );
