@@ -14,4 +14,14 @@ export declare function openPullRequest(opts: {
     title: string;
     body: string;
     token?: string;
-}): Promise<string>;
+}): Promise<{
+    url: string;
+    number: number;
+}>;
+export declare function mergePullRequest(opts: {
+    owner: string;
+    repo: string;
+    pullNumber: number;
+    branch?: string;
+    token?: string;
+}): Promise<void>;

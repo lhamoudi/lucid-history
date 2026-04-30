@@ -49,7 +49,23 @@ export async function openPullRequest(opts) {
         title: opts.title,
         body: opts.body,
     });
-    return pr.data.html_url;
+    return { url: pr.data.html_url, number: pr.data.number };
+}
+export async function mergePullRequest(opts) {
+    const octokit = new Octokit({ auth: opts.token ?? process.env.GITHUB_TOKEN });
+    await octokit.pulls.merge({
+        owner: opts.owner,
+        repo: opts.repo,
+        pull_number: opts.pullNumber,
+        merge_method: 'squash',
+    });
+    if (opts.branch) {
+        await octokit.git.deleteRef({
+            owner: opts.owner,
+            repo: opts.repo,
+            ref: `heads/${opts.branch}`,
+        });
+    }
 }
 async function ensureMain(git, localPath) {
     const remotes = await git.branch(['-r']);
