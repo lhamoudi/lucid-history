@@ -9,6 +9,7 @@ import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.
 import { summarizeDiff } from './summarize.js';
 import { renderChangedPages, renderComparedPages, isDateOnlyChange, type PageRender } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
+import { appendHistoryEntry } from './history.js';
 import type { LucidDocument } from './types.js';
 
 
@@ -202,6 +203,8 @@ program
 
         const { link } = await takeLucidSnapshot();
         const summaryPath = join(snapshotDir, 'summary.md');
+        const historyPath = join(docDir, 'HISTORY.md');
+        const initialSummaryText = `Initial snapshot; no prior state to diff.`;
         const relativeImageSection = buildImageSection(
           renders.map(({ pageTitle, after }) => ({
             pageTitle,
@@ -209,14 +212,21 @@ program
             afterUrl: relative(snapshotDir, after),
           })),
         );
-        await writeFile(summaryPath, `Initial snapshot; no prior state to diff.${link}${relativeImageSection}`);
+        await writeFile(summaryPath, `${initialSummaryText}${link}${relativeImageSection}`);
+        await appendHistoryEntry(docDir, {
+          timestamp,
+          summary: initialSummaryText,
+          pagesAdded: doc.pages.map((p) => p.title),
+          pagesChanged: [],
+          pagesRemoved: [],
+        });
 
         const branch = `snapshot/${docId}/${timestamp}`;
         console.log(`[${doc.title}] Committing to branch ${branch}...`);
         const sha = await commitAndPushBranch(
           git, opts.local, branch,
           `chore: initial snapshot of ${doc.title}`,
-          [jsonPath, latestPath, summaryPath, ...renders.map((r) => r.after)],
+          [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after)],
         );
 
         const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${sha}`;
@@ -288,6 +298,7 @@ program
       summary += link;
 
       const summaryPath = join(snapshotDir, 'summary.md');
+      const historyPath = join(docDir, 'HISTORY.md');
       const relativeImageSection = buildImageSection(
         renders.map(({ pageTitle, before, after }) => ({
           pageTitle,
@@ -297,6 +308,13 @@ program
       );
       await mkdir(snapshotDir, { recursive: true });
       await writeFile(summaryPath, summary + relativeImageSection);
+      await appendHistoryEntry(docDir, {
+        timestamp,
+        summary,
+        pagesAdded: substantiveD.pagesAdded.map((p) => p.title),
+        pagesChanged: substantiveD.perPage.map((pd) => pd.page.title),
+        pagesRemoved: substantiveD.pagesRemoved.map((p) => p.title),
+      });
 
       const branch = `snapshot/${docId}/${timestamp}`;
       console.log(`[${doc.title}] Committing to branch ${branch}...`);
@@ -305,7 +323,7 @@ program
         opts.local,
         branch,
         `chore: snapshot ${doc.title} @ ${timestamp}`,
-        [jsonPath, latestPath, summaryPath, ...renders.map((r) => r.after)],
+        [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after)],
       );
 
       // PR body uses absolute SHA-based URLs so images survive branch deletion.
