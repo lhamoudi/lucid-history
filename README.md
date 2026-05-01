@@ -102,14 +102,11 @@ The tool writes to the snapshots repo with this structure:
 ```
 snapshots/
   <doc-title>___<doc-id>/
-    json/
-      2026-04-22T10-30-00Z.json        written on each run
-      latest.json                       copy of most recent
-    pages/
-      <page-name>___<page-id>/
-        2026-04-22T10-30-00Z-Page_Name.png   only when this page changed
+    latest.json                              copy of most recent snapshot
     2026-04-22T10-30-00Z/
-      summary.md                        the PR body, archived
+      snapshot.json                          full normalized document JSON
+      summary.md                             the PR body, archived
+      <page-title>___<page-id>.png           one per changed page (only when changed)
 ```
 
 Folder names use the convention `<human-readable-name>___<id>` so the identifier is always unambiguous. Both doc titles and page names are sanitized (`[^a-zA-Z0-9_-]` → `_`); IDs are appended verbatim after `___`.
@@ -135,7 +132,7 @@ Fill in `<your-org>/<your-snapshots-repo>` in the snapshot workflows, then add t
 ## Development
 
 ```bash
-npm test           # vitest unit tests for pure modules (diff, normalize, indexer)
+npm test           # vitest unit tests for pure modules (diff, normalize)
 npm run typecheck
 npm run build
 ```
@@ -150,8 +147,7 @@ npm run build
 - [x] GitHub Actions workflows (daily, manual, compare)
 - [x] Lucid snapshot copies via `--lucid-folder`
 - [x] Auto-merge + branch deletion via `--auto-merge`
-- [ ] `HISTORY.md` / `_index.md` auto-update on each snapshot (functions exist in `src/indexer.ts`; not yet wired into `snapshot`)
-- [ ] Lucid PNG export endpoint path verified against Lucid docs
+- [x] Lucid PNG export verified and working
 
 ## License
 

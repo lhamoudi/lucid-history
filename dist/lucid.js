@@ -45,8 +45,6 @@ export async function fetchDocument(documentId, apiKey = process.env.LUCID_API_K
 export async function exportPagePng(documentId, pageId, apiKey = process.env.LUCID_API_KEY) {
     if (!apiKey)
         throw new Error('LUCID_API_KEY is not set');
-    // Endpoint path pending verification against Lucid REST docs; the export
-    // endpoint differs by product/tier.
     const res = await fetch(`${LUCID_API_BASE}/documents/${documentId}?pageId=${encodeURIComponent(pageId)}`, {
         headers: { ...authHeaders(apiKey), Accept: 'image/png' },
     });
