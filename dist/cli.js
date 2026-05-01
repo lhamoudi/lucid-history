@@ -162,6 +162,23 @@ program
         console.log(`[${doc.title}] Initial snapshot — no prior state`);
         if (opts.dryRun)
             return;
+        let renders = [];
+        if (opts.skipRenders) {
+            console.log(`[${doc.title}] Skipping PNG renders`);
+        }
+        else {
+            const allPageIds = doc.pages.map((p) => p.id);
+            console.log(`[${doc.title}] Rendering ${allPageIds.length} page(s) as baseline...`);
+            renders = await renderChangedPages({
+                documentId: docId,
+                changedPageIds: allPageIds,
+                pageTitles: new Map(doc.pages.map((p) => [p.id, p.title])),
+                timestamp,
+                runDir: snapshotDir,
+                docDir,
+            });
+            console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
+        }
         const { link } = await takeLucidSnapshot();
         const summaryPath = join(snapshotDir, 'summary.md');
         const historyPath = join(docDir, 'HISTORY.md');
@@ -176,7 +193,7 @@ program
         });
         const branch = `snapshot/${docId}/${timestamp}`;
         console.log(`[${doc.title}] Committing to branch ${branch}...`);
-        await commitAndPushBranch(git, opts.local, branch, `chore: initial snapshot of ${doc.title}`, [jsonPath, latestPath, summaryPath, historyPath]);
+        await commitAndPushBranch(git, opts.local, branch, `chore: initial snapshot of ${doc.title}`, [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after)]);
         console.log(`[${doc.title}] Opening PR...`);
         const { url, number } = await openPullRequest({
             owner,
