@@ -3,8 +3,8 @@ import { join } from 'node:path';
 
 const HEADER =
   '# Snapshot History\n\n' +
-  '| Snapshot | +Pages | ~Pages | −Pages | Affected Pages | Summary |\n' +
-  '|:---------|-------:|-------:|-------:|:---------------|:--------|\n';
+  '| Snapshot | +Pages | ~Pages | −Pages | Affected Pages | Summary | Lucid |\n' +
+  '|:---------|-------:|-------:|-------:|:---------------|:--------|:------|\n';
 
 export type HistoryEntry = {
   timestamp: string;      // e.g. "2026-05-01T09-39-13Z"
@@ -12,6 +12,7 @@ export type HistoryEntry = {
   pagesAdded: string[];   // titles of newly-added pages
   pagesChanged: string[]; // titles of modified pages
   pagesRemoved: string[]; // titles of removed pages
+  lucidUrl?: string;      // URL of the Lucid folder copy, if created
 };
 
 function extractBlurb(summary: string): string {
@@ -39,7 +40,8 @@ function buildRow(entry: HistoryEntry): string {
   const pagesCell = allPages.length > 0 ? esc(allPages.join(' · ')) : '—';
   const link = `[${formatTimestamp(entry.timestamp)}](${entry.timestamp}/summary.md)`;
   const blurb = esc(extractBlurb(entry.summary));
-  return `| ${link} | ${entry.pagesAdded.length} | ${entry.pagesChanged.length} | ${entry.pagesRemoved.length} | ${pagesCell} | ${blurb} |`;
+  const lucidCell = entry.lucidUrl ? `[view](${entry.lucidUrl})` : '—';
+  return `| ${link} | ${entry.pagesAdded.length} | ${entry.pagesChanged.length} | ${entry.pagesRemoved.length} | ${pagesCell} | ${blurb} | ${lucidCell} |`;
 }
 
 export async function appendHistoryEntry(docDir: string, entry: HistoryEntry): Promise<void> {

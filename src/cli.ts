@@ -165,18 +165,21 @@ program
       await writeFile(jsonPath, normalized);
       await writeFile(latestPath, normalized);
 
-      async function takeLucidSnapshot(): Promise<{ link: string }> {
-        if (!opts.lucidFolder) return { link: '' };
+      async function takeLucidSnapshot(): Promise<{ link: string; url: string }> {
+        if (!opts.lucidFolder) return { link: '', url: '' };
         const folderId = parseInt(opts.lucidFolder, 10);
         console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
         const snapshotTitle = `SNAPSHOT_${doc.title}_${timestamp.slice(0, 10)}`;
         try {
           const copied = await copyDocument(docId, snapshotTitle, folderId);
           console.log(`[${doc.title}] Lucid copy saved: ${copied.url}`);
-          return { link: `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})` };
+          return {
+            link: `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})`,
+            url: copied.url,
+          };
         } catch (err) {
           console.warn(`[${doc.title}] Warning: Lucid copy skipped — ${(err as Error).message}`);
-          return { link: '' };
+          return { link: '', url: '' };
         }
       }
 
@@ -201,7 +204,7 @@ program
           console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
         }
 
-        const { link } = await takeLucidSnapshot();
+        const { link, url: lucidUrl } = await takeLucidSnapshot();
         const summaryPath = join(snapshotDir, 'summary.md');
         const historyPath = join(docDir, 'HISTORY.md');
         const initialSummaryText = `Initial snapshot; no prior state to diff.`;
@@ -212,6 +215,7 @@ program
           pagesAdded: doc.pages.map((p) => p.title),
           pagesChanged: [],
           pagesRemoved: [],
+          lucidUrl: lucidUrl || undefined,
         });
 
         const branch = `snapshot/${docId}/${timestamp}`;
@@ -278,7 +282,7 @@ program
         console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
       }
 
-      const { link } = await takeLucidSnapshot();
+      const { link, url: lucidUrl } = await takeLucidSnapshot();
       summary += link;
 
       const summaryPath = join(snapshotDir, 'summary.md');
@@ -298,6 +302,7 @@ program
         pagesAdded: substantiveD.pagesAdded.map((p) => p.title),
         pagesChanged: substantiveD.perPage.map((pd) => pd.page.title),
         pagesRemoved: substantiveD.pagesRemoved.map((p) => p.title),
+        lucidUrl: lucidUrl || undefined,
       });
 
       const branch = `snapshot/${docId}/${timestamp}`;

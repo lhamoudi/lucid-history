@@ -1,8 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 const HEADER = '# Snapshot History\n\n' +
-    '| Snapshot | +Pages | ~Pages | −Pages | Affected Pages | Summary |\n' +
-    '|:---------|-------:|-------:|-------:|:---------------|:--------|\n';
+    '| Snapshot | +Pages | ~Pages | −Pages | Affected Pages | Summary | Lucid |\n' +
+    '|:---------|-------:|-------:|-------:|:---------------|:--------|:------|\n';
 function extractBlurb(summary) {
     const themeLine = summary
         .split('\n')
@@ -25,7 +25,8 @@ function buildRow(entry) {
     const pagesCell = allPages.length > 0 ? esc(allPages.join(' · ')) : '—';
     const link = `[${formatTimestamp(entry.timestamp)}](${entry.timestamp}/summary.md)`;
     const blurb = esc(extractBlurb(entry.summary));
-    return `| ${link} | ${entry.pagesAdded.length} | ${entry.pagesChanged.length} | ${entry.pagesRemoved.length} | ${pagesCell} | ${blurb} |`;
+    const lucidCell = entry.lucidUrl ? `[view](${entry.lucidUrl})` : '—';
+    return `| ${link} | ${entry.pagesAdded.length} | ${entry.pagesChanged.length} | ${entry.pagesRemoved.length} | ${pagesCell} | ${blurb} | ${lucidCell} |`;
 }
 export async function appendHistoryEntry(docDir, entry) {
     const historyPath = join(docDir, 'HISTORY.md');
