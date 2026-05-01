@@ -147,7 +147,7 @@ program
             return { link: '', url: '' };
         const folderId = parseInt(opts.lucidFolder, 10);
         console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
-        const snapshotTitle = `SNAPSHOT_${doc.title}_${timestamp.slice(0, 10)}`;
+        const snapshotTitle = `SNAPSHOT_${doc.title}_${timestamp.slice(0, 10)} ${timestamp.slice(11, 13)}:${timestamp.slice(14, 16)}`;
         try {
             const copied = await copyDocument(docId, snapshotTitle, folderId);
             console.log(`[${doc.title}] Lucid copy saved: ${copied.url}`);
