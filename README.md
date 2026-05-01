@@ -103,6 +103,7 @@ The tool writes to the snapshots repo with this structure:
 snapshots/
   <doc-title>___<doc-id>/
     latest.json                              copy of most recent snapshot
+    HISTORY.md                               chronological table of all snapshots
     2026-04-22T10-30-00Z/
       snapshot.json                          full normalized document JSON
       summary.md                             the PR body, archived
@@ -147,6 +148,7 @@ npm run build
 - [x] GitHub Actions workflows (daily, manual, compare)
 - [x] Lucid snapshot copies via `--lucid-folder`
 - [x] Auto-merge + branch deletion via `--auto-merge`
+- [x] `HISTORY.md` per-doc snapshot log (date, page counts, affected pages, AI theme blurb)
 - [x] Lucid PNG export verified and working
 
 ## License
