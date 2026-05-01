@@ -254,6 +254,14 @@ program
       const changedPages = changedPageIds(substantiveD);
       console.log(`[${doc.title}] ${changedPages.length} page(s) changed`);
 
+      console.log(`[${doc.title}] Generating AI summary...`);
+      let summary = await summarizeDiff(doc.title, substantiveD);
+
+      if (opts.dryRun) {
+        console.log(summary);
+        return;
+      }
+
       let renders: PageRender[] = [];
       if (opts.skipRenders) {
         console.log(`[${doc.title}] Skipping PNG renders`);
@@ -268,14 +276,6 @@ program
           docDir,
         });
         console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
-      }
-
-      console.log(`[${doc.title}] Generating AI summary...`);
-      let summary = await summarizeDiff(doc.title, substantiveD);
-
-      if (opts.dryRun) {
-        console.log(summary);
-        return;
       }
 
       const { link } = await takeLucidSnapshot();
