@@ -180,15 +180,54 @@ program
       }
 
       if (!base) {
-        console.log(`[${doc.title}] Initial snapshot — no diff available`);
+        console.log(`[${doc.title}] Initial snapshot — rendering all pages`);
         if (opts.dryRun) return;
+
+        let renders: PageRender[] = [];
+        if (opts.skipRenders) {
+          console.log(`[${doc.title}] Skipping PNG renders`);
+        } else {
+          const allPageIds = doc.pages.map((p) => p.id);
+          console.log(`[${doc.title}] Rendering ${allPageIds.length} page(s)...`);
+          renders = await renderChangedPages({
+            documentId: docId,
+            changedPageIds: allPageIds,
+            pageTitles: new Map(doc.pages.map((p) => [p.id, p.title])),
+            timestamp,
+            runDir: snapshotDir,
+            docDir,
+          });
+          console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
+        }
+
         const { link } = await takeLucidSnapshot();
+        const summaryPath = join(snapshotDir, 'summary.md');
+        const relativeImageSection = buildImageSection(
+          renders.map(({ pageTitle, after }) => ({
+            pageTitle,
+            beforeUrl: null,
+            afterUrl: relative(snapshotDir, after),
+          })),
+        );
+        await writeFile(summaryPath, `Initial snapshot; no prior state to diff.${link}${relativeImageSection}`);
+
         const branch = `snapshot/${docId}/${timestamp}`;
         console.log(`[${doc.title}] Committing to branch ${branch}...`);
-        await commitAndPushBranch(git, opts.local, branch, `chore: initial snapshot of ${doc.title}`, [
-          jsonPath,
-          latestPath,
-        ]);
+        const sha = await commitAndPushBranch(
+          git, opts.local, branch,
+          `chore: initial snapshot of ${doc.title}`,
+          [jsonPath, latestPath, summaryPath, ...renders.map((r) => r.after)],
+        );
+
+        const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${sha}`;
+        const absoluteImageSection = buildImageSection(
+          renders.map(({ pageTitle, after }) => ({
+            pageTitle,
+            beforeUrl: null,
+            afterUrl: `${rawBase}/${relative(opts.local, after)}`,
+          })),
+        );
+
         console.log(`[${doc.title}] Opening PR...`);
         const { url, number } = await openPullRequest({
           owner,
@@ -196,7 +235,7 @@ program
           head: branch,
           base: 'main',
           title: `Initial snapshot: ${doc.title}`,
-          body: `Initial snapshot; no diff available.${link}`,
+          body: `Initial snapshot; no prior state to diff.${link}${absoluteImageSection}`,
         });
         console.log(`[${doc.title}] PR opened: ${url}`);
         if (opts.autoMerge) {
