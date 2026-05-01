@@ -7,7 +7,7 @@ import { fetchDocument, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
 import { summarizeDiff } from './summarize.js';
-import { renderChangedPages, renderComparedPages, type PageRender } from './renders.js';
+import { renderChangedPages, renderComparedPages, isDateOnlyChange, type PageRender } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import type { LucidDocument } from './types.js';
 
@@ -85,15 +85,20 @@ program
         console.log('No material changes.');
         return;
       }
+      const substantiveD = { ...d, perPage: d.perPage.filter(pd => !isDateOnlyChange(pd)) };
+      if (isEmpty(substantiveD)) {
+        console.log('No material changes.');
+        return;
+      }
       await rm(opts.out, { recursive: true, force: true });
       const [summary, renders] = await Promise.all([
-        summarizeDiff(head.title, d),
+        summarizeDiff(head.title, substantiveD),
         opts.skipRenders
           ? Promise.resolve([] as string[])
           : renderComparedPages({
               baseDocumentId: baseId,
               headDocumentId: headId,
-              diff: d,
+              diff: substantiveD,
               outDir: opts.out,
             }),
       ]);
@@ -207,8 +212,13 @@ program
         console.log(`[${doc.title}] No material changes — skipping PR`);
         return;
       }
+      const substantiveD = { ...d, perPage: d.perPage.filter(pd => !isDateOnlyChange(pd)) };
+      if (isEmpty(substantiveD)) {
+        console.log(`[${doc.title}] Date-only changes — skipping PR`);
+        return;
+      }
 
-      const changedPages = changedPageIds(d);
+      const changedPages = changedPageIds(substantiveD);
       console.log(`[${doc.title}] ${changedPages.length} page(s) changed`);
 
       let renders: PageRender[] = [];
@@ -228,7 +238,7 @@ program
       }
 
       console.log(`[${doc.title}] Generating AI summary...`);
-      let summary = await summarizeDiff(doc.title, d);
+      let summary = await summarizeDiff(doc.title, substantiveD);
 
       if (opts.dryRun) {
         console.log(summary);

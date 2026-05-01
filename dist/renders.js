@@ -5,7 +5,7 @@ import { exportPagePng } from './lucid.js';
 const sanitize = (s) => s.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
 // Matches "<any label> | <Month DD, YYYY>" — the date-stamp shape used across diagrams.
 const LABEL_DATE_RE = /^[^|]+\|\s*(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s*\d{4}$/;
-function isDateOnlyChange(pd) {
+export function isDateOnlyChange(pd) {
     const isLabelDate = (text) => LABEL_DATE_RE.test(text.trim());
     return (pd.page.renamedFrom === null &&
         pd.shapesAdded.length === 0 &&

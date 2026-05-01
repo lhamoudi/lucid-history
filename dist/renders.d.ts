@@ -1,4 +1,5 @@
-import type { DocDiff } from './types.js';
+import type { DocDiff, PageDiff } from './types.js';
+export declare function isDateOnlyChange(pd: PageDiff): boolean;
 export type PageRender = {
     pageTitle: string;
     before: string | null;
