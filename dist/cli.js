@@ -301,9 +301,9 @@ function shortDate(d) {
     return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
 function digestWeekLabel(start) {
-    const friday = new Date(start);
-    friday.setUTCDate(start.getUTCDate() + 4);
-    return `Week of ${shortDate(start)} – ${shortDate(friday)}, ${start.getUTCFullYear()}`;
+    const sunday = new Date(start);
+    sunday.setUTCDate(start.getUTCDate() + 6);
+    return `Week of ${shortDate(start)} – ${shortDate(sunday)}, ${start.getUTCFullYear()}`;
 }
 function digestRowUrl(doc, row, owner, repo) {
     return `https://github.com/${owner}/${repo}/blob/main/snapshots/${doc.docFolder}/${row.folderTimestamp}/summary.md`;

@@ -354,9 +354,9 @@ function shortDate(d: Date): string {
 type DigestFormatOpts = { start: Date; end: Date; owner: string; repo: string };
 
 function digestWeekLabel(start: Date): string {
-  const friday = new Date(start);
-  friday.setUTCDate(start.getUTCDate() + 4);
-  return `Week of ${shortDate(start)} – ${shortDate(friday)}, ${start.getUTCFullYear()}`;
+  const sunday = new Date(start);
+  sunday.setUTCDate(start.getUTCDate() + 6);
+  return `Week of ${shortDate(start)} – ${shortDate(sunday)}, ${start.getUTCFullYear()}`;
 }
 
 function digestRowUrl(doc: DocDigest, row: { folderTimestamp: string }, owner: string, repo: string): string {
