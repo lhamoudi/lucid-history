@@ -76,6 +76,20 @@ npx lucid-history compare <base-doc-id> <head-doc-id> --skip-renders # skip PNG 
 
 Fetches both documents live and prints an AI-generated summary of structural differences. Useful when you restore an old version of a document in Lucid (which creates a new doc ID) and want to compare it against the current version. With `--out`, writes `summary.md` and per-page before/after PNGs into the specified directory.
 
+### `weekly-digest` — post a Slack recap of the week's changes
+
+```bash
+npx lucid-history weekly-digest --repo your-org/your-snapshots-repo --slack-webhook <url>
+npx lucid-history weekly-digest --repo your-org/your-snapshots-repo --slack-webhook <url> --week 2026-05-01
+npx lucid-history weekly-digest --repo your-org/your-snapshots-repo --dry-run
+```
+
+Reads each doc's `HISTORY.md` from the local snapshots checkout, filters to the requested week (Mon–Sun), and posts a structured mrkdwn message to a Slack incoming webhook. Skips posting silently if no changes that week.
+
+`--week <YYYY-MM-DD>` targets the week containing the given date (default: current week). When run via GitHub Actions on Monday morning, the workflow passes last week's date automatically.
+
+`--dry-run` prints the Slack payload without posting. `--slack-webhook` is not required in this mode.
+
 ### `snapshot` — full daily pipeline
 
 ```bash
@@ -86,13 +100,15 @@ npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --lucid-
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --auto-merge
 ```
 
-`--skip-renders` bypasses PNG export — useful while the Lucid PNG endpoint is being validated.
+`--dry-run` fetches, diffs, and prints the AI summary without writing any files, pushing any commits, or creating a Lucid copy.
+
+`--skip-renders` bypasses PNG export for changed pages.
 
 `--auto-merge` squash-merges the PR immediately after opening it, then deletes the snapshot branch. Skipped in `--dry-run`. Requires the `GITHUB_TOKEN` to have write access to the snapshots repo.
 
-`--lucid-folder <id>` copies the live document directly into the given Lucid folder, titled `SNAPSHOT_<doc-title>_<YYYY-MM-DD>`. A link is appended to both the snapshot `summary.md` and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
+`--lucid-folder <id>` copies the live document into the given Lucid folder, titled `SNAPSHOT_<doc-title>_<YYYY-MM-DD> <HH:MM>`. A link is appended to both the snapshot `summary.md` and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
 
-No prior snapshot? The first run creates an "initial snapshot" commit with no summary.
+No prior snapshot? The first run creates an "initial snapshot" commit (baseline PNGs only, no diff summary).
 No material changes since last snapshot? No commit, no PR — the command exits silently.
 
 ## Snapshots repo layout
@@ -114,21 +130,23 @@ Folder names use the convention `<human-readable-name>___<id>` so the identifier
 
 ## GitHub Actions
 
-Three ready-to-use workflows are provided:
+Four ready-to-use workflows are provided:
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | [`daily-snapshot.yml`](.github/workflows/daily-snapshot.yml) | Schedule (Mon–Fri 09:00 UTC) + manual | Snapshots every doc in `docs.json` |
 | [`manual-snapshot.yml`](.github/workflows/manual-snapshot.yml) | Actions tab → Run workflow | Snapshot a single doc ID or all docs; supports `--dry-run`; auto-merge opt-in (default off) |
 | [`compare.yml`](.github/workflows/compare.yml) | Actions tab → Run workflow | Compare two live doc IDs; summary shown inline, PNGs uploaded as ZIP artifact |
+| [`weekly-digest.yml`](.github/workflows/weekly-digest.yml) | Schedule (Mon 09:00 UTC) + manual | Post previous week's change digest to Slack |
 
 Fill in `<your-org>/<your-snapshots-repo>` in the snapshot workflows, then add these secrets:
 
 | Secret | Used by | Description |
 |---|---|---|
-| `LUCID_API_KEY` | all | Lucid REST API key |
-| `ANTHROPIC_API_KEY` | all | Anthropic API key |
+| `LUCID_API_KEY` | all snapshot workflows | Lucid REST API key |
+| `ANTHROPIC_API_KEY` | all snapshot workflows | Anthropic API key |
 | `SNAPSHOTS_GITHUB_TOKEN` | snapshot workflows | GitHub PAT with `repo` scope for the snapshots repo |
+| `SLACK_WEBHOOK_URL` | `weekly-digest.yml` | Slack incoming webhook URL (omit to disable digest) |
 
 ## Development
 
@@ -149,6 +167,8 @@ npm run build
 - [x] Lucid snapshot copies via `--lucid-folder`
 - [x] Auto-merge + branch deletion via `--auto-merge`
 - [x] `HISTORY.md` per-doc snapshot log (date, page counts, affected pages, AI theme blurb)
+- [x] Weekly Slack digest via `weekly-digest` command + GitHub Actions workflow
+- [x] Exponential backoff retries on all Lucid API calls
 - [x] Lucid PNG export verified and working
 
 ## License
