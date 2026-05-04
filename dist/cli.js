@@ -300,10 +300,33 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 function shortDate(d) {
     return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
 }
+function digestWeekLabel(start) {
+    const friday = new Date(start);
+    friday.setUTCDate(start.getUTCDate() + 4);
+    return `Week of ${shortDate(start)} – ${shortDate(friday)}, ${start.getUTCFullYear()}`;
+}
+function digestRowUrl(doc, row, owner, repo) {
+    return `https://github.com/${owner}/${repo}/blob/main/snapshots/${doc.docFolder}/${row.folderTimestamp}/summary.md`;
+}
+function formatMarkdownDigest(digests, opts) {
+    const sections = digests.map(doc => {
+        const title = `## ${doc.title}`;
+        if (doc.rows.length === 0)
+            return `${title}\n\n_No changes this week._`;
+        const bullets = doc.rows.map(row => {
+            const d = new Date(row.isoDate + 'T00:00:00Z');
+            const time = row.timestamp.slice(11, 16);
+            const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
+            const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
+            const pages = row.affectedPages || '—';
+            const url = digestRowUrl(doc, row, opts.owner, opts.repo);
+            return `- **${dateLine}** — ${counts} · ${pages}\n  ${row.theme} [Summary](${url})`;
+        });
+        return `${title}\n\n${bullets.join('\n')}`;
+    });
+    return `# ${digestWeekLabel(opts.start)} — Lucidchart Diagram Digest\n\n${sections.join('\n\n')}`;
+}
 function formatSlackDigest(digests, opts) {
-    const friday = new Date(opts.start);
-    friday.setUTCDate(opts.start.getUTCDate() + 4);
-    const header = `*Week of ${shortDate(opts.start)} – ${shortDate(friday)}, ${opts.start.getUTCFullYear()} — Lucidchart Diagram Digest*`;
     const sections = digests.map(doc => {
         const title = `*${doc.title}*`;
         if (doc.rows.length === 0)
@@ -314,24 +337,25 @@ function formatSlackDigest(digests, opts) {
             const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
             const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
             const pages = row.affectedPages || '—';
-            const url = `https://github.com/${opts.owner}/${opts.repo}/blob/main/snapshots/${doc.docFolder}/${row.folderTimestamp}/summary.md`;
+            const url = digestRowUrl(doc, row, opts.owner, opts.repo);
             return `• *${dateLine}* — ${counts} · ${pages}\n  ${row.theme} <${url}|Summary>`;
         });
         return `${title}\n${bullets.join('\n')}`;
     });
-    return [header, ...sections].join('\n\n');
+    return `*${digestWeekLabel(opts.start)} — Lucidchart Diagram Digest*\n\n${sections.join('\n\n')}`;
 }
 program
     .command('weekly-digest')
-    .description('Compile and post a weekly Slack digest of diagram changes')
+    .description('Compile a weekly digest of diagram changes; post to Slack and/or write to a file')
     .requiredOption('--repo <owner/name>', 'GitHub snapshots repo slug (for summary links)')
     .option('--local <path>', 'Local snapshots repo path', '.')
     .option('--slack-webhook <url>', 'Slack incoming webhook URL')
+    .option('--out <file>', 'Write the digest as a Markdown file')
     .option('--week <YYYY-MM-DD>', 'Any date in the week to digest (default: today)')
-    .option('--dry-run', 'Print the Slack payload without posting', false)
+    .option('--dry-run', 'Print the digest without posting or writing', false)
     .action(async (opts) => {
-    if (!opts.dryRun && !opts.slackWebhook) {
-        console.error('--slack-webhook is required unless --dry-run is set');
+    if (!opts.dryRun && !opts.slackWebhook && !opts.out) {
+        console.error('At least one of --slack-webhook or --out is required unless --dry-run is set');
         process.exit(1);
     }
     const ref = opts.week ? new Date(opts.week + 'T12:00:00Z') : new Date();
@@ -343,19 +367,26 @@ program
     }
     const { start, end } = getWeekRange(ref);
     const [owner, repo] = opts.repo.split('/');
-    const text = formatSlackDigest(digests, { start, end, owner, repo });
+    const fmtOpts = { start, end, owner, repo };
     if (opts.dryRun) {
-        console.log(text);
+        console.log(formatMarkdownDigest(digests, fmtOpts));
         return;
     }
-    const res = await fetch(opts.slackWebhook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-    });
-    if (!res.ok)
-        throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
-    console.log('Weekly digest posted to Slack.');
+    if (opts.out) {
+        await mkdir(dirname(opts.out), { recursive: true });
+        await writeFile(opts.out, formatMarkdownDigest(digests, fmtOpts));
+        console.log(`Wrote digest to ${opts.out}`);
+    }
+    if (opts.slackWebhook) {
+        const res = await fetch(opts.slackWebhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: formatSlackDigest(digests, fmtOpts) }),
+        });
+        if (!res.ok)
+            throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
+        console.log('Weekly digest posted to Slack.');
+    }
 });
 program.parseAsync();
 //# sourceMappingURL=cli.js.map

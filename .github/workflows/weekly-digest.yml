@@ -23,17 +23,40 @@ jobs:
       - name: Install lucid-history
         run: npm install github:lhamoudi/lucid-history
 
+      - name: Configure git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
       - name: Send weekly digest
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
         run: |
           # Default to last week so Monday morning recaps the previous Mon–Fri
           WEEK="${{ inputs.week }}"
           if [ -z "$WEEK" ]; then
             WEEK=$(date -d "7 days ago" +%Y-%m-%d)
           fi
+          MONDAY=$(date -d "$WEEK - $(date -d $WEEK +%u) days + 1 day" +%Y-%m-%d)
+          OUT="digests/${MONDAY}.md"
+
+          SLACK_FLAG=""
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            SLACK_FLAG="--slack-webhook $SLACK_WEBHOOK_URL"
+          fi
+
           npx lucid-history weekly-digest \
             --local . \
             --repo <your-org>/<your-snapshots-repo> \
-            --slack-webhook "$SLACK_WEBHOOK_URL" \
-            --week "$WEEK"
+            --out "$OUT" \
+            --week "$WEEK" \
+            $SLACK_FLAG
+
+          if git diff --quiet "$OUT" 2>/dev/null && git ls-files --error-unmatch "$OUT" 2>/dev/null; then
+            echo "Digest unchanged — nothing to commit."
+          else
+            git add "$OUT"
+            git commit -m "chore: weekly digest ${MONDAY}"
+            git push
+          fi
