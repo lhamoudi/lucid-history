@@ -1,0 +1,39 @@
+name: Weekly Digest
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'    # Monday 09:00 UTC — recap of the previous week (adjust to taste)
+  workflow_dispatch:
+    inputs:
+      week:
+        description: 'Any date in the week to digest (YYYY-MM-DD, default: last week)'
+        required: false
+        type: string
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install lucid-history
+        run: npm install github:lhamoudi/lucid-history
+
+      - name: Send weekly digest
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          # Default to last week so Monday morning recaps the previous Mon–Fri
+          WEEK="${{ inputs.week }}"
+          if [ -z "$WEEK" ]; then
+            WEEK=$(date -d "7 days ago" +%Y-%m-%d)
+          fi
+          npx lucid-history weekly-digest \
+            --local . \
+            --repo <your-org>/<your-snapshots-repo> \
+            --slack-webhook "$SLACK_WEBHOOK_URL" \
+            --week "$WEEK"
