@@ -139,7 +139,7 @@ Four ready-to-use workflows are provided:
 | [`compare.yml`](.github/workflows/compare.yml) | Actions tab → Run workflow | Compare two live doc IDs; summary shown inline, PNGs uploaded as ZIP artifact |
 | [`weekly-digest.yml`](.github/workflows/weekly-digest.yml) | Schedule (Mon 09:00 UTC) + manual | Post previous week's change digest to Slack |
 
-Fill in `<your-org>/<your-snapshots-repo>` in the snapshot workflows, then add these secrets:
+Add these secrets and variables to your snapshots repo (Settings → Secrets/Variables → Actions):
 
 | Secret | Used by | Description |
 |---|---|---|
@@ -147,6 +147,10 @@ Fill in `<your-org>/<your-snapshots-repo>` in the snapshot workflows, then add t
 | `ANTHROPIC_API_KEY` | all snapshot workflows | Anthropic API key |
 | `SNAPSHOTS_GITHUB_TOKEN` | snapshot workflows | GitHub PAT with `repo` scope for the snapshots repo |
 | `SLACK_WEBHOOK_URL` | `weekly-digest.yml` | Slack incoming webhook URL (omit to disable digest) |
+
+| Variable | Used by | Description |
+|---|---|---|
+| `SNAPSHOTS_REPO` | `weekly-digest.yml` | `owner/repo` slug of the snapshots repo (e.g. `your-org/your-snapshots-repo`) |
 
 ## Development
 
