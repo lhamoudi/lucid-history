@@ -10,6 +10,7 @@ import { summarizeDiff } from './summarize.js';
 import { renderChangedPages, renderComparedPages, isDateOnlyChange, type PageRender } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import { appendHistoryEntry } from './history.js';
+import { compileDigest, getWeekRange, type DocDigest } from './digest.js';
 import type { LucidDocument } from './types.js';
 
 
@@ -342,5 +343,81 @@ program
       }
     },
   );
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function shortDate(d: Date): string {
+  return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+
+function formatSlackDigest(
+  digests: DocDigest[],
+  opts: { start: Date; end: Date; owner: string; repo: string },
+): string {
+  const friday = new Date(opts.start);
+  friday.setUTCDate(opts.start.getUTCDate() + 4);
+  const header = `*Week of ${shortDate(opts.start)} – ${shortDate(friday)}, ${opts.start.getUTCFullYear()} — Lucidchart Diagram Digest*`;
+
+  const sections = digests.map(doc => {
+    const title = `*${doc.title}*`;
+    if (doc.rows.length === 0) return `${title}\n_No changes this week._`;
+
+    const bullets = doc.rows.map(row => {
+      const d = new Date(row.isoDate + 'T00:00:00Z');
+      const time = row.timestamp.slice(11, 16);
+      const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
+      const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
+      const pages = row.affectedPages || '—';
+      const url = `https://github.com/${opts.owner}/${opts.repo}/blob/main/snapshots/${doc.docFolder}/${row.folderTimestamp}/summary.md`;
+      return `• *${dateLine}* — ${counts} · ${pages}\n  ${row.theme} <${url}|Summary>`;
+    });
+
+    return `${title}\n${bullets.join('\n')}`;
+  });
+
+  return [header, ...sections].join('\n\n');
+}
+
+program
+  .command('weekly-digest')
+  .description('Compile and post a weekly Slack digest of diagram changes')
+  .requiredOption('--repo <owner/name>', 'GitHub snapshots repo slug (for summary links)')
+  .option('--local <path>', 'Local snapshots repo path', '.')
+  .option('--slack-webhook <url>', 'Slack incoming webhook URL')
+  .option('--week <YYYY-MM-DD>', 'Any date in the week to digest (default: today)')
+  .option('--dry-run', 'Print the Slack payload without posting', false)
+  .action(async (opts: { repo: string; local: string; slackWebhook?: string; week?: string; dryRun: boolean }) => {
+    if (!opts.dryRun && !opts.slackWebhook) {
+      console.error('--slack-webhook is required unless --dry-run is set');
+      process.exit(1);
+    }
+
+    const ref = opts.week ? new Date(opts.week + 'T12:00:00Z') : new Date();
+    const digests = await compileDigest(opts.local, ref);
+
+    const totalRows = digests.reduce((sum, d) => sum + d.rows.length, 0);
+    if (totalRows === 0) {
+      console.log('No changes this week — skipping digest.');
+      return;
+    }
+
+    const { start, end } = getWeekRange(ref);
+    const [owner, repo] = opts.repo.split('/');
+    const text = formatSlackDigest(digests, { start, end, owner, repo });
+
+    if (opts.dryRun) {
+      console.log(text);
+      return;
+    }
+
+    const res = await fetch(opts.slackWebhook!, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
+    console.log('Weekly digest posted to Slack.');
+  });
 
 program.parseAsync();
