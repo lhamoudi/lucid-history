@@ -34,8 +34,10 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SNAPSHOTS_REPO: ${{ vars.SNAPSHOTS_REPO }}
+          CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
+          CONFLUENCE_PARENT_ID: ${{ vars.CONFLUENCE_PARENT_ID }}
         run: |
-          # Default to last week so Monday morning recaps the previous Mon–Fri
+          # Default to last week so Monday morning recaps the previous Mon–Sun
           WEEK="${{ inputs.week }}"
           if [ -z "$WEEK" ]; then
             WEEK=$(date -d "7 days ago" +%Y-%m-%d)
@@ -43,17 +45,26 @@ jobs:
           MONDAY=$(date -d "$WEEK - $(date -d $WEEK +%u) days + 1 day" +%Y-%m-%d)
           OUT="digests/${MONDAY}.md"
 
-          SLACK_FLAG=""
-          if [ -n "$SLACK_WEBHOOK_URL" ]; then
-            SLACK_FLAG="--slack-webhook $SLACK_WEBHOOK_URL"
+          ARGS=(
+            --local .
+            --repo "$SNAPSHOTS_REPO"
+            --out "$OUT"
+            --week "$WEEK"
+          )
+
+          [ -n "$SLACK_WEBHOOK_URL" ] && ARGS+=(--slack-webhook "$SLACK_WEBHOOK_URL")
+
+          if [ -n "$CONFLUENCE_TOKEN" ] && [ -n "$CONFLUENCE_PARENT_ID" ]; then
+            ARGS+=(
+              --confluence-url https://<your-org>.atlassian.net
+              --confluence-email <your-email>
+              --confluence-token "$CONFLUENCE_TOKEN"
+              --confluence-space <your-space-key>
+              --confluence-parent "$CONFLUENCE_PARENT_ID"
+            )
           fi
 
-          npx lucid-history weekly-digest \
-            --local . \
-            --repo "$SNAPSHOTS_REPO" \
-            --out "$OUT" \
-            --week "$WEEK" \
-            $SLACK_FLAG
+          npx lucid-history weekly-digest "${ARGS[@]}"
 
           if git diff --quiet "$OUT" 2>/dev/null && git ls-files --error-unmatch "$OUT" 2>/dev/null; then
             echo "Digest unchanged — nothing to commit."

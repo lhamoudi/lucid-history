@@ -408,53 +408,97 @@ function formatSlackDigest(digests: DocDigest[], opts: DigestFormatOpts): string
 
 program
   .command('weekly-digest')
-  .description('Compile a weekly digest of diagram changes; post to Slack and/or write to a file')
+  .description('Compile a weekly digest of diagram changes; post to Slack, write to a file, and/or publish to Confluence')
   .requiredOption('--repo <owner/name>', 'GitHub snapshots repo slug (for summary links)')
   .option('--local <path>', 'Local snapshots repo path', '.')
   .option('--slack-webhook <url>', 'Slack incoming webhook URL')
-  .option('--out <file>', 'Write the digest as a Markdown file')
+  .option('--out <file>', 'Write the digest as a Markdown file (committed to the snapshots repo by the workflow)')
   .option('--week <YYYY-MM-DD>', 'Any date in the week to digest (default: today)')
   .option('--dry-run', 'Print the digest without posting or writing', false)
-  .action(async (opts: { repo: string; local: string; slackWebhook?: string; out?: string; week?: string; dryRun: boolean }) => {
-    if (!opts.dryRun && !opts.slackWebhook && !opts.out) {
-      console.error('At least one of --slack-webhook or --out is required unless --dry-run is set');
-      process.exit(1);
-    }
+  .option('--confluence-url <url>', 'Confluence base URL, e.g. https://your-org.atlassian.net')
+  .option('--confluence-email <email>', 'Atlassian account email')
+  .option('--confluence-token <token>', 'Atlassian API token')
+  .option('--confluence-space <key>', 'Confluence space key')
+  .option('--confluence-parent <id>', 'Page ID of the Confluence parent page for digest pages')
+  .action(
+    async (opts: {
+      repo: string;
+      local: string;
+      slackWebhook?: string;
+      out?: string;
+      week?: string;
+      dryRun: boolean;
+      confluenceUrl?: string;
+      confluenceEmail?: string;
+      confluenceToken?: string;
+      confluenceSpace?: string;
+      confluenceParent?: string;
+    }) => {
+      const hasConfluence =
+        opts.confluenceUrl &&
+        opts.confluenceEmail &&
+        opts.confluenceToken &&
+        opts.confluenceSpace &&
+        opts.confluenceParent;
 
-    const ref = opts.week ? new Date(opts.week + 'T12:00:00Z') : new Date();
-    const digests = await compileDigest(opts.local, ref);
+      if (!opts.dryRun && !opts.slackWebhook && !opts.out && !hasConfluence) {
+        console.error(
+          'At least one of --slack-webhook, --out, or --confluence-* flags is required unless --dry-run is set',
+        );
+        process.exit(1);
+      }
 
-    const totalRows = digests.reduce((sum, d) => sum + d.rows.length, 0);
-    if (totalRows === 0) {
-      console.log('No changes this week — skipping digest.');
-      return;
-    }
+      const ref = opts.week ? new Date(opts.week + 'T12:00:00Z') : new Date();
+      const digests = await compileDigest(opts.local, ref);
 
-    const { start, end } = getWeekRange(ref);
-    const [owner, repo] = opts.repo.split('/');
-    const fmtOpts = { start, end, owner, repo };
+      const totalRows = digests.reduce((sum, d) => sum + d.rows.length, 0);
+      if (totalRows === 0) {
+        console.log('No changes this week — skipping digest.');
+        return;
+      }
 
-    if (opts.dryRun) {
-      console.log(formatMarkdownDigest(digests, fmtOpts));
-      return;
-    }
+      const { start, end } = getWeekRange(ref);
+      const [owner, repo] = opts.repo.split('/');
+      const fmtOpts = { start, end, owner, repo };
 
-    if (opts.out) {
-      await mkdir(dirname(opts.out), { recursive: true });
-      await writeFile(opts.out, formatMarkdownDigest(digests, fmtOpts));
-      console.log(`Wrote digest to ${opts.out}`);
-    }
+      if (opts.dryRun) {
+        console.log(formatMarkdownDigest(digests, fmtOpts));
+        return;
+      }
 
-    if (opts.slackWebhook) {
-      const res = await fetch(opts.slackWebhook, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: formatSlackDigest(digests, fmtOpts) }),
-      });
-      if (!res.ok) throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
-      console.log('Weekly digest posted to Slack.');
-    }
-  });
+      if (opts.out) {
+        await mkdir(dirname(opts.out), { recursive: true });
+        await writeFile(opts.out, formatMarkdownDigest(digests, fmtOpts));
+        console.log(`Wrote digest to ${opts.out}`);
+      }
+
+      if (opts.slackWebhook) {
+        const res = await fetch(opts.slackWebhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: formatSlackDigest(digests, fmtOpts) }),
+        });
+        if (!res.ok) throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
+        console.log('Weekly digest posted to Slack.');
+      }
+
+      if (hasConfluence) {
+        const auth = { email: opts.confluenceEmail!, token: opts.confluenceToken! };
+        const pageTitle = digestWeekLabel(start);
+        const pageBody = markdownToStorage(formatMarkdownDigest(digests, fmtOpts));
+        console.log(`Publishing digest to Confluence: "${pageTitle}"...`);
+        await upsertPage(
+          opts.confluenceSpace!,
+          opts.confluenceParent!,
+          pageTitle,
+          pageBody,
+          opts.confluenceUrl!,
+          auth,
+        );
+        console.log('Weekly digest published to Confluence.');
+      }
+    },
+  );
 
 program
   .command('confluence-update')
