@@ -76,6 +76,22 @@ npx lucid-history compare <base-doc-id> <head-doc-id> --skip-renders # skip PNG 
 
 Fetches both documents live and prints an AI-generated summary of structural differences. Useful when you restore an old version of a document in Lucid (which creates a new doc ID) and want to compare it against the current version. With `--out`, writes `summary.md` and per-page before/after PNGs into the specified directory.
 
+### `confluence-update` — publish snapshot history to Confluence
+
+```bash
+npx lucid-history confluence-update \
+  --repo your-org/your-snapshots-repo \
+  --confluence-url https://your-org.atlassian.net \
+  --confluence-email you@example.com \
+  --confluence-token <atlassian-api-token> \
+  --confluence-space MYSPACE \
+  --confluence-parent <parent-page-id>
+```
+
+Scans every doc folder under `snapshots/` in the local checkout, reads each doc's `HISTORY.md` and latest `summary.md`, and creates or updates a Confluence page per document under the specified parent. Pages are created on first run and updated in place on subsequent runs.
+
+`--local <path>` sets the local snapshots repo path (default: `"."`). The Atlassian API token is generated at [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens). The parent page ID can be found in the Confluence page URL (`?pageId=...` or `/wiki/spaces/KEY/pages/<id>`).
+
 ### `weekly-digest` — post a Slack recap of the week's changes
 
 ```bash
@@ -134,7 +150,7 @@ Four ready-to-use workflows are provided:
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| [`daily-snapshot.yml`](.github/workflows/daily-snapshot.yml) | Schedule (Mon–Fri 09:00 UTC) + manual | Snapshots every doc in `docs.json` |
+| [`daily-snapshot.yml`](.github/workflows/daily-snapshot.yml) | Schedule (Mon–Fri 09:00 UTC) + manual | Snapshots every doc in `docs.json`; updates Confluence if configured |
 | [`manual-snapshot.yml`](.github/workflows/manual-snapshot.yml) | Actions tab → Run workflow | Snapshot a single doc ID or all docs; supports `--dry-run`; auto-merge opt-in (default off) |
 | [`compare.yml`](.github/workflows/compare.yml) | Actions tab → Run workflow | Compare two live doc IDs; summary shown inline, PNGs uploaded as ZIP artifact |
 | [`weekly-digest.yml`](.github/workflows/weekly-digest.yml) | Schedule (Mon 09:00 UTC) + manual | Post previous week's change digest to Slack |
@@ -147,10 +163,12 @@ Add these secrets and variables to your snapshots repo (Settings → Secrets/Var
 | `ANTHROPIC_API_KEY` | all snapshot workflows | Anthropic API key |
 | `SNAPSHOTS_GITHUB_TOKEN` | snapshot workflows | GitHub PAT with `repo` scope for the snapshots repo |
 | `SLACK_WEBHOOK_URL` | `weekly-digest.yml` | Slack incoming webhook URL (omit to disable digest) |
+| `CONFLUENCE_TOKEN` | `daily-snapshot.yml` | Atlassian API token (omit to disable Confluence updates) |
 
 | Variable | Used by | Description |
 |---|---|---|
 | `SNAPSHOTS_REPO` | `weekly-digest.yml` | `owner/repo` slug of the snapshots repo (e.g. `your-org/your-snapshots-repo`) |
+| `CONFLUENCE_PARENT_ID` | `daily-snapshot.yml` | Page ID of the Confluence parent page under which per-doc pages are created |
 
 ## Development
 
@@ -174,6 +192,7 @@ npm run build
 - [x] Weekly Slack digest via `weekly-digest` command + GitHub Actions workflow
 - [x] Exponential backoff retries on all Lucid API calls
 - [x] Lucid PNG export verified and working
+- [x] Confluence page publishing via `confluence-update` command + daily workflow step
 
 ## License
 

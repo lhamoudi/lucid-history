@@ -11,6 +11,7 @@ import { renderChangedPages, renderComparedPages, isDateOnlyChange } from './ren
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import { appendHistoryEntry } from './history.js';
 import { compileDigest, getWeekRange } from './digest.js';
+import { upsertPage, markdownToStorage, absolutifyLinks } from './confluence.js';
 function buildImageSection(renders) {
     if (renders.length === 0)
         return '';
@@ -386,6 +387,81 @@ program
         if (!res.ok)
             throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
         console.log('Weekly digest posted to Slack.');
+    }
+});
+program
+    .command('confluence-update')
+    .description('Publish snapshot history for every tracked document to Confluence')
+    .requiredOption('--repo <owner/name>', 'GitHub snapshots repo slug (used to build absolute links)')
+    .option('--local <path>', 'Local snapshots repo path', '.')
+    .requiredOption('--confluence-url <url>', 'Confluence base URL, e.g. https://your-org.atlassian.net')
+    .requiredOption('--confluence-email <email>', 'Atlassian account email')
+    .requiredOption('--confluence-token <token>', 'Atlassian API token')
+    .requiredOption('--confluence-space <key>', 'Confluence space key, e.g. NYLProject')
+    .requiredOption('--confluence-parent <id>', 'Page ID of the parent page under which doc pages live')
+    .action(async (opts) => {
+    const auth = { email: opts.confluenceEmail, token: opts.confluenceToken };
+    const [owner, repoName] = opts.repo.split('/');
+    const snapshotsRoot = join(opts.local, 'snapshots');
+    let docFolders;
+    try {
+        docFolders = (await readdir(snapshotsRoot, { withFileTypes: true }))
+            .filter((e) => e.isDirectory())
+            .map((e) => e.name);
+    }
+    catch {
+        console.error(`No snapshots directory found at ${snapshotsRoot}`);
+        process.exit(1);
+    }
+    for (const folderName of docFolders) {
+        const docDir = join(snapshotsRoot, folderName);
+        let docTitle;
+        try {
+            const latest = JSON.parse(await readFile(join(docDir, 'latest.json'), 'utf8'));
+            docTitle = latest.title;
+        }
+        catch {
+            console.warn(`[${folderName}] No latest.json — skipping`);
+            continue;
+        }
+        const ghBase = `https://github.com/${owner}/${repoName}/blob/main/snapshots/${folderName}`;
+        let historyMd = '';
+        try {
+            const raw = await readFile(join(docDir, 'HISTORY.md'), 'utf8');
+            // Strip top-level heading — we'll wrap it in a section heading ourselves
+            const body = raw.replace(/^# [^\n]+\n\n/, '');
+            historyMd = absolutifyLinks(body, ghBase);
+        }
+        catch {
+            // No history yet — leave empty
+        }
+        let latestSummary = '';
+        try {
+            const entries = (await readdir(docDir, { withFileTypes: true }))
+                .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
+                .sort((a, b) => b.name.localeCompare(a.name));
+            if (entries.length > 0) {
+                const raw = await readFile(join(docDir, entries[0].name, 'summary.md'), 'utf8');
+                // Strip page-renders section — relative image paths don't work in Confluence
+                latestSummary = raw.replace(/\n\n---\n\n## Page renders[\s\S]*$/, '');
+            }
+        }
+        catch {
+            // No summary
+        }
+        const parts = [];
+        if (latestSummary)
+            parts.push(`## Latest Snapshot\n\n${latestSummary}`);
+        if (historyMd)
+            parts.push(`## Change History\n\n${historyMd}`);
+        if (parts.length === 0) {
+            console.log(`[${docTitle}] Nothing to publish — skipping`);
+            continue;
+        }
+        const pageBody = markdownToStorage(parts.join('\n\n'));
+        console.log(`[${docTitle}] Upserting Confluence page...`);
+        await upsertPage(opts.confluenceSpace, opts.confluenceParent, docTitle, pageBody, opts.confluenceUrl, auth);
+        console.log(`[${docTitle}] Done.`);
     }
 });
 program.parseAsync();

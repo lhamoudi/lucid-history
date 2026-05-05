@@ -32,3 +32,22 @@ jobs:
           for id in $(jq -r '.[].id' docs.json); do
             npx lucid-history snapshot "$id" --repo <your-org>/<your-snapshots-repo> --lucid-folder <your-automated-snapshots-folder-id> --auto-merge
           done
+
+      - name: Update Confluence
+        env:
+          CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
+          CONFLUENCE_PARENT_ID: ${{ vars.CONFLUENCE_PARENT_ID }}
+        run: |
+          if [ -z "$CONFLUENCE_TOKEN" ] || [ -z "$CONFLUENCE_PARENT_ID" ]; then
+            echo "CONFLUENCE_TOKEN or CONFLUENCE_PARENT_ID not set — skipping Confluence update"
+            exit 0
+          fi
+          git pull origin main
+          npx lucid-history confluence-update \
+            --local . \
+            --repo <your-org>/<your-snapshots-repo> \
+            --confluence-url https://<your-org>.atlassian.net \
+            --confluence-email <your-email> \
+            --confluence-token "$CONFLUENCE_TOKEN" \
+            --confluence-space <your-space-key> \
+            --confluence-parent "$CONFLUENCE_PARENT_ID"
