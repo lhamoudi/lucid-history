@@ -33,7 +33,6 @@ jobs:
       - name: Send weekly digest
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SNAPSHOTS_REPO: ${{ vars.SNAPSHOTS_REPO }}
           CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
           CONFLUENCE_PARENT_ID: ${{ vars.CONFLUENCE_PARENT_ID }}
         run: |
@@ -47,7 +46,7 @@ jobs:
 
           ARGS=(
             --local .
-            --repo "$SNAPSHOTS_REPO"
+            --repo "${{ github.repository }}"
             --out "$OUT"
             --week "$WEEK"
           )

@@ -189,7 +189,6 @@ Add these secrets and variables to your snapshots repo (Settings → Secrets/Var
 
 | Variable | Used by | Description |
 |---|---|---|
-| `SNAPSHOTS_REPO` | `weekly-digest.yml` | `owner/repo` slug of the snapshots repo (e.g. `your-org/your-snapshots-repo`) |
 | `CONFLUENCE_PARENT_ID` | `daily-snapshot.yml`, `weekly-digest.yml` | Page ID of the Confluence parent page for per-doc pages and weekly digests |
 
 ## Development
