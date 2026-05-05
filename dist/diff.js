@@ -1,5 +1,8 @@
 function shapeText(shape) {
-    return (shape.textAreas ?? []).map((t) => t.text ?? '').join('\n');
+    return (shape.textAreas ?? [])
+        .filter((t) => t.label !== 'ReadonlyAttributionText')
+        .map((t) => t.text ?? '')
+        .join('\n');
 }
 function shapeRef(shape) {
     return { id: shape.id, class: shape.class, text: shapeText(shape) };

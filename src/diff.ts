@@ -9,7 +9,10 @@ import type {
 } from './types.js';
 
 function shapeText(shape: LucidShape): string {
-  return (shape.textAreas ?? []).map((t) => t.text ?? '').join('\n');
+  return (shape.textAreas ?? [])
+    .filter((t) => t.label !== 'ReadonlyAttributionText')
+    .map((t) => t.text ?? '')
+    .join('\n');
 }
 
 function shapeRef(shape: LucidShape): ShapeRef {
