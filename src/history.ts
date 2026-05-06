@@ -46,7 +46,7 @@ function buildRow(entry: HistoryEntry): string {
   const snapshotCell = `**${formatTimestamp(entry.timestamp)}**${linksLine}${copyIdLine}`;
   const changes = `+${entry.pagesAdded.length} ~${entry.pagesChanged.length} −${entry.pagesRemoved.length}`;
   const blurb = esc(extractBlurb(entry.summary));
-  const summaryLink = `<br>[Full Summary on GitHub](${entry.timestamp}/summary.md)`;
+  const summaryLink = `<br>[Full Summary](${entry.timestamp}/summary.md)`;
   return `| ${snapshotCell} | ${changes} | ${pagesCell} | ${blurb}${summaryLink} |`;
 }
 

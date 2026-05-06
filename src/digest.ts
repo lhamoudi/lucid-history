@@ -19,9 +19,9 @@ export type DocDigest = {
 };
 
 // Matches the current row format:
-// | **YYYY-MM-DD HH:MM UTC**<br>...links... | +N ~N −N | pages | theme — [Full Summary on GitHub](<folderTimestamp>/summary.md) |
+// | **YYYY-MM-DD HH:MM UTC**<br>...links... | +N ~N −N | pages | theme — [Full Summary](<folderTimestamp>/summary.md) |
 const ROW_RE =
-  /^\|\s+\*\*(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC\*\*[^|]*\|\s*\+(\d+)\s*~(\d+)\s*[−-](\d+)\s*\|\s*([^|]*?)\s*\|\s*(.*?)<br>\[Full Summary on GitHub\]\(([^)]+)\/summary\.md\)\s*\|/;
+  /^\|\s+\*\*(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC\*\*[^|]*\|\s*\+(\d+)\s*~(\d+)\s*[−-](\d+)\s*\|\s*([^|]*?)\s*\|\s*(.*?)<br>\[Full Summary\]\(([^)]+)\/summary\.md\)\s*\|/;
 
 export function parseHistoryRows(historyMd: string): HistoryRow[] {
   return historyMd

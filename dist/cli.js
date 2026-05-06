@@ -518,7 +518,7 @@ program
                 // Strip page-renders section — relative image paths don't work in Confluence
                 const stripped = raw.replace(/\n\n---\n\n## Page renders[\s\S]*$/, '');
                 const fullSummaryUrl = `${ghBase}/${entries[0].name}/summary.md`;
-                latestSummary = `${stripped}\n\n[Full Summary on GitHub](${fullSummaryUrl})`;
+                latestSummary = `${stripped}\n\n[Full Summary](${fullSummaryUrl})`;
             }
         }
         catch {
