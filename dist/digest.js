@@ -1,8 +1,8 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 // Matches the current row format:
-// | **YYYY-MM-DD HH:MM UTC**<br>[Summary](<folderTimestamp>/summary.md)...rest | +N ~N −N | pages | theme |
-const ROW_RE = /^\|\s+\*\*(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC\*\*<br>\[Summary\]\(([^)]+)\/summary\.md\)[^|]*\|\s*\+(\d+)\s*~(\d+)\s*[−-](\d+)\s*\|\s*([^|]*?)\s*\|\s*([^|]*?)\s*\|/;
+// | **YYYY-MM-DD HH:MM UTC**<br>...links... | +N ~N −N | pages | theme — [Full Summary on GitHub](<folderTimestamp>/summary.md) |
+const ROW_RE = /^\|\s+\*\*(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC\*\*[^|]*\|\s*\+(\d+)\s*~(\d+)\s*[−-](\d+)\s*\|\s*([^|]*?)\s*\|\s*(.*?)\s*—\s*\[Full Summary on GitHub\]\(([^)]+)\/summary\.md\)\s*\|/;
 export function parseHistoryRows(historyMd) {
     return historyMd
         .split('\n')
@@ -14,12 +14,12 @@ export function parseHistoryRows(historyMd) {
         return [{
                 timestamp: `${m[1]} ${m[2]} UTC`,
                 isoDate: m[1],
-                folderTimestamp: m[3],
-                pagesAdded: parseInt(m[4], 10),
-                pagesChanged: parseInt(m[5], 10),
-                pagesRemoved: parseInt(m[6], 10),
-                affectedPages: m[7].trim(),
-                theme: m[8].trim(),
+                folderTimestamp: m[8],
+                pagesAdded: parseInt(m[3], 10),
+                pagesChanged: parseInt(m[4], 10),
+                pagesRemoved: parseInt(m[5], 10),
+                affectedPages: m[6].trim(),
+                theme: m[7].trim(),
             }];
     });
 }

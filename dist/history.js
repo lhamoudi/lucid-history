@@ -23,14 +23,16 @@ function esc(s) {
 function buildRow(entry) {
     const allPages = [...entry.pagesAdded, ...entry.pagesChanged, ...entry.pagesRemoved];
     const pagesCell = allPages.length > 0 ? esc(allPages.join(' · ')) : '—';
-    const links = [`[Summary](${entry.timestamp}/summary.md)`];
+    const links = [];
     if (entry.lucidUrl)
         links.push(`[Lucid Snapshot](${entry.lucidUrl})`);
     const copyIdLine = entry.copyDocId ? `<br>Compare ID: \`${entry.copyDocId}\`` : '';
-    const snapshotCell = `**${formatTimestamp(entry.timestamp)}**<br>${links.join(' · ')}${copyIdLine}`;
+    const linksLine = links.length > 0 ? `<br>${links.join(' · ')}` : '';
+    const snapshotCell = `**${formatTimestamp(entry.timestamp)}**${linksLine}${copyIdLine}`;
     const changes = `+${entry.pagesAdded.length} ~${entry.pagesChanged.length} −${entry.pagesRemoved.length}`;
     const blurb = esc(extractBlurb(entry.summary));
-    return `| ${snapshotCell} | ${changes} | ${pagesCell} | ${blurb} |`;
+    const summaryLink = ` — [Full Summary on GitHub](${entry.timestamp}/summary.md)`;
+    return `| ${snapshotCell} | ${changes} | ${pagesCell} | ${blurb}${summaryLink} |`;
 }
 export async function appendHistoryEntry(docDir, entry) {
     const historyPath = join(docDir, 'HISTORY.md');
