@@ -3,7 +3,7 @@ name: Daily Snapshot
 on:
   schedule:
     - cron: '0 9 * * 1-5'   # 09:00 UTC Mon–Fri (adjust to taste)
-  workflow_dispatch:
+  workflow_dispatch:          # manual trigger from the Actions tab
 
 jobs:
   snapshot:
