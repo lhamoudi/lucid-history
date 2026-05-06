@@ -64,6 +64,24 @@ program
     console.log(await summarizeDiff(head.title, d));
   });
 
+async function loadPageIdMap(
+  local: string,
+  docId: string,
+): Promise<Record<string, string> | null> {
+  try {
+    const registry = JSON.parse(
+      await readFile(join(local, 'copy-registry.json'), 'utf8'),
+    ) as Record<string, { sourceDocId: string; pageMap: Record<string, string> }>;
+    return registry[docId]?.pageMap ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function translatePageIds(doc: LucidDocument, map: Record<string, string>): LucidDocument {
+  return { ...doc, pages: doc.pages.map((p) => ({ ...p, id: map[p.id] ?? p.id })) };
+}
+
 program
   .command('compare')
   .description('Fetch two live Lucid documents and print an AI-generated summary of differences')
@@ -72,13 +90,29 @@ program
   .option('--raw', 'Print the DocDiff JSON instead of calling the summarizer')
   .option('--skip-renders', 'Skip PNG exports', false)
   .option('--out <dir>', 'Directory to write PNGs into', './compare-output')
+  .option('--local <path>', 'Local snapshots repo path — used to load page ID maps for cross-document compare')
   .action(
     async (
       baseId: string,
       headId: string,
-      opts: { raw?: boolean; skipRenders: boolean; out: string },
+      opts: { raw?: boolean; skipRenders: boolean; out: string; local?: string },
     ) => {
-      const [base, head] = await Promise.all([fetchDocument(baseId), fetchDocument(headId)]);
+      let [base, head] = await Promise.all([fetchDocument(baseId), fetchDocument(headId)]);
+
+      if (opts.local) {
+        const [baseMap, headMap] = await Promise.all([
+          loadPageIdMap(opts.local, baseId),
+          loadPageIdMap(opts.local, headId),
+        ]);
+        if (baseMap) {
+          base = translatePageIds(base, baseMap);
+          console.log(`Applied page ID map for base document (${Object.keys(baseMap).length} pages)`);
+        }
+        if (headMap) {
+          head = translatePageIds(head, headMap);
+          console.log(`Applied page ID map for head document (${Object.keys(headMap).length} pages)`);
+        }
+      }
       const d = enrichLinesWithShapeText(diff(base, head), head);
       if (opts.raw) {
         console.log(JSON.stringify(d, null, 2));
@@ -167,7 +201,7 @@ program
       await writeFile(jsonPath, normalized);
       await writeFile(latestPath, normalized);
 
-      async function takeLucidSnapshot(): Promise<{ link: string; url: string }> {
+      async function takeLucidSnapshot(): Promise<{ link: string; url: string; registryPath?: string }> {
         if (!opts.lucidFolder) return { link: '', url: '' };
         const folderId = parseInt(opts.lucidFolder, 10);
         console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
@@ -175,9 +209,31 @@ program
         try {
           const copied = await copyDocument(docId, snapshotTitle, folderId);
           console.log(`[${doc.title}] Lucid copy saved: ${copied.url}`);
+
+          // Build page ID map so cross-document compare can match pages correctly.
+          let registryPath: string | undefined;
+          try {
+            const copyDoc = await fetchDocument(copied.id);
+            const sourceByIndex = new Map(doc.pages.map((p) => [p.index, p.id]));
+            const pageMap: Record<string, string> = {};
+            for (const page of copyDoc.pages) {
+              const sourceId = sourceByIndex.get(page.index);
+              if (sourceId) pageMap[page.id] = sourceId;
+            }
+            registryPath = join(opts.local, 'copy-registry.json');
+            let registry: Record<string, { sourceDocId: string; pageMap: Record<string, string> }> = {};
+            try { registry = JSON.parse(await readFile(registryPath, 'utf8')); } catch { /* first run */ }
+            registry[copied.id] = { sourceDocId: docId, pageMap };
+            await writeFile(registryPath, JSON.stringify(registry, null, 2) + '\n');
+            console.log(`[${doc.title}] Page ID map recorded for copy ${copied.id}`);
+          } catch (mapErr) {
+            console.warn(`[${doc.title}] Warning: page ID map skipped — ${(mapErr as Error).message}`);
+          }
+
           return {
             link: `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})`,
             url: copied.url,
+            registryPath,
           };
         } catch (err) {
           console.warn(`[${doc.title}] Warning: Lucid copy skipped — ${(err as Error).message}`);
@@ -206,7 +262,7 @@ program
           console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
         }
 
-        const { link, url: lucidUrl } = await takeLucidSnapshot();
+        const { link, url: lucidUrl, registryPath } = await takeLucidSnapshot();
         const summaryPath = join(snapshotDir, 'summary.md');
         const historyPath = join(docDir, 'HISTORY.md');
         const initialSummaryText = `Initial snapshot; no prior state to diff.`;
@@ -225,7 +281,7 @@ program
         await commitAndPushBranch(
           git, opts.local, branch,
           `chore: initial snapshot of ${doc.title}`,
-          [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after)],
+          [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after), ...(registryPath ? [registryPath] : [])],
         );
 
         console.log(`[${doc.title}] Opening PR...`);
@@ -284,7 +340,7 @@ program
         console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
       }
 
-      const { link, url: lucidUrl } = await takeLucidSnapshot();
+      const { link, url: lucidUrl, registryPath } = await takeLucidSnapshot();
       summary += link;
 
       const summaryPath = join(snapshotDir, 'summary.md');
@@ -314,7 +370,7 @@ program
         opts.local,
         branch,
         `chore: snapshot ${doc.title} @ ${timestamp}`,
-        [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after)],
+        [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after), ...(registryPath ? [registryPath] : [])],
       );
 
       // PR body uses absolute SHA-based URLs so images survive branch deletion.

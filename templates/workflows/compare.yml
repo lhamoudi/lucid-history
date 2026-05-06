@@ -27,6 +27,8 @@ jobs:
   compare:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -44,6 +46,7 @@ jobs:
           npx lucid-history compare \
             "${{ inputs.base_doc_id }}" \
             "${{ inputs.head_doc_id }}" \
+            --local . \
             --out compare-output \
             $SKIP_FLAG
 
