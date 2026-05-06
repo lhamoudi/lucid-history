@@ -516,7 +516,9 @@ program
             if (entries.length > 0) {
                 const raw = await readFile(join(docDir, entries[0].name, 'summary.md'), 'utf8');
                 // Strip page-renders section — relative image paths don't work in Confluence
-                latestSummary = raw.replace(/\n\n---\n\n## Page renders[\s\S]*$/, '');
+                const stripped = raw.replace(/\n\n---\n\n## Page renders[\s\S]*$/, '');
+                const fullSummaryUrl = `${ghBase}/${entries[0].name}/summary.md`;
+                latestSummary = `${stripped}\n\n[Full Summary on GitHub](${fullSummaryUrl})`;
             }
         }
         catch {
