@@ -71,7 +71,7 @@ async function loadPageIdMap(
   try {
     const registry = JSON.parse(
       await readFile(join(local, 'copy-registry.json'), 'utf8'),
-    ) as Record<string, { sourceDocId: string; pageMap: Record<string, string> }>;
+    ) as Record<string, { sourceDocId: string; docTitle: string; timestamp: string; lucidUrl: string; pageMap: Record<string, string> }>;
     return registry[docId]?.pageMap ?? null;
   } catch {
     return null;
@@ -201,8 +201,8 @@ program
       await writeFile(jsonPath, normalized);
       await writeFile(latestPath, normalized);
 
-      async function takeLucidSnapshot(): Promise<{ link: string; url: string; registryPath?: string }> {
-        if (!opts.lucidFolder) return { link: '', url: '' };
+      async function takeLucidSnapshot(): Promise<{ link: string; url: string; copyDocId?: string; registryPath?: string }> {
+        if (!opts.lucidFolder) return { link: '', url: '', copyDocId: undefined };
         const folderId = parseInt(opts.lucidFolder, 10);
         console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
         const snapshotTitle = `SNAPSHOT_${doc.title}_${timestamp.slice(0, 10)} ${timestamp.slice(11, 13)}:${timestamp.slice(14, 16)}`;
@@ -221,9 +221,9 @@ program
               if (sourceId) pageMap[page.id] = sourceId;
             }
             registryPath = join(opts.local, 'copy-registry.json');
-            let registry: Record<string, { sourceDocId: string; pageMap: Record<string, string> }> = {};
+            let registry: Record<string, { sourceDocId: string; docTitle: string; timestamp: string; lucidUrl: string; pageMap: Record<string, string> }> = {};
             try { registry = JSON.parse(await readFile(registryPath, 'utf8')); } catch { /* first run */ }
-            registry[copied.id] = { sourceDocId: docId, pageMap };
+            registry[copied.id] = { sourceDocId: docId, docTitle: doc.title, timestamp, lucidUrl: copied.url, pageMap };
             await writeFile(registryPath, JSON.stringify(registry, null, 2) + '\n');
             console.log(`[${doc.title}] Page ID map recorded for copy ${copied.id}`);
           } catch (mapErr) {
@@ -233,11 +233,12 @@ program
           return {
             link: `\n\n---\n\n**Lucid snapshot:** [${snapshotTitle}](${copied.url})`,
             url: copied.url,
+            copyDocId: copied.id,
             registryPath,
           };
         } catch (err) {
           console.warn(`[${doc.title}] Warning: Lucid copy skipped — ${(err as Error).message}`);
-          return { link: '', url: '' };
+          return { link: '', url: '', copyDocId: undefined };
         }
       }
 
@@ -262,7 +263,7 @@ program
           console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
         }
 
-        const { link, url: lucidUrl, registryPath } = await takeLucidSnapshot();
+        const { link, url: lucidUrl, copyDocId, registryPath } = await takeLucidSnapshot();
         const summaryPath = join(snapshotDir, 'summary.md');
         const historyPath = join(docDir, 'HISTORY.md');
         const initialSummaryText = `Initial snapshot; no prior state to diff.`;
@@ -274,6 +275,7 @@ program
           pagesChanged: [],
           pagesRemoved: [],
           lucidUrl: lucidUrl || undefined,
+          copyDocId: copyDocId || undefined,
         });
 
         const branch = `snapshot/${docId}/${timestamp}`;
@@ -340,7 +342,7 @@ program
         console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
       }
 
-      const { link, url: lucidUrl, registryPath } = await takeLucidSnapshot();
+      const { link, url: lucidUrl, copyDocId, registryPath } = await takeLucidSnapshot();
       summary += link;
 
       const summaryPath = join(snapshotDir, 'summary.md');
@@ -361,6 +363,7 @@ program
         pagesChanged: substantiveD.perPage.map((pd) => pd.page.title),
         pagesRemoved: substantiveD.pagesRemoved.map((p) => p.title),
         lucidUrl: lucidUrl || undefined,
+        copyDocId: copyDocId || undefined,
       });
 
       const branch = `snapshot/${docId}/${timestamp}`;

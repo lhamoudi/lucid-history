@@ -5,5 +5,6 @@ export type HistoryEntry = {
     pagesChanged: string[];
     pagesRemoved: string[];
     lucidUrl?: string;
+    copyDocId?: string;
 };
 export declare function appendHistoryEntry(docDir: string, entry: HistoryEntry): Promise<void>;

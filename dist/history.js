@@ -26,7 +26,8 @@ function buildRow(entry) {
     const links = [`[Summary](${entry.timestamp}/summary.md)`];
     if (entry.lucidUrl)
         links.push(`[Lucid Snapshot](${entry.lucidUrl})`);
-    const snapshotCell = `**${formatTimestamp(entry.timestamp)}**<br>${links.join(' · ')}`;
+    const copyIdLine = entry.copyDocId ? `<br>Compare ID: \`${entry.copyDocId}\`` : '';
+    const snapshotCell = `**${formatTimestamp(entry.timestamp)}**<br>${links.join(' · ')}${copyIdLine}`;
     const changes = `+${entry.pagesAdded.length} ~${entry.pagesChanged.length} −${entry.pagesRemoved.length}`;
     const blurb = esc(extractBlurb(entry.summary));
     return `| ${snapshotCell} | ${changes} | ${pagesCell} | ${blurb} |`;

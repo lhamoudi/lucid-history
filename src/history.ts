@@ -13,6 +13,7 @@ export type HistoryEntry = {
   pagesChanged: string[]; // titles of modified pages
   pagesRemoved: string[]; // titles of removed pages
   lucidUrl?: string;      // URL of the Lucid folder copy, if created
+  copyDocId?: string;     // Lucid doc ID of the snapshot copy, for use with compare
 };
 
 function extractBlurb(summary: string): string {
@@ -40,7 +41,8 @@ function buildRow(entry: HistoryEntry): string {
   const pagesCell = allPages.length > 0 ? esc(allPages.join(' · ')) : '—';
   const links = [`[Summary](${entry.timestamp}/summary.md)`];
   if (entry.lucidUrl) links.push(`[Lucid Snapshot](${entry.lucidUrl})`);
-  const snapshotCell = `**${formatTimestamp(entry.timestamp)}**<br>${links.join(' · ')}`;
+  const copyIdLine = entry.copyDocId ? `<br>Compare ID: \`${entry.copyDocId}\`` : '';
+  const snapshotCell = `**${formatTimestamp(entry.timestamp)}**<br>${links.join(' · ')}${copyIdLine}`;
   const changes = `+${entry.pagesAdded.length} ~${entry.pagesChanged.length} −${entry.pagesRemoved.length}`;
   const blurb = esc(extractBlurb(entry.summary));
   return `| ${snapshotCell} | ${changes} | ${pagesCell} | ${blurb} |`;
