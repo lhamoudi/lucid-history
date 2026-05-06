@@ -1,3 +1,11 @@
+function siteOrigin(url) {
+    try {
+        return new URL(url).origin;
+    }
+    catch {
+        return url.replace(/\/+$/, '');
+    }
+}
 function authHeader(auth) {
     return `Basic ${Buffer.from(`${auth.email}:${auth.token}`).toString('base64')}`;
 }
@@ -18,7 +26,7 @@ async function apiRequest(method, url, auth, body) {
     return res.json();
 }
 export async function findPage(spaceKey, title, baseUrl, auth) {
-    const url = `${baseUrl}/wiki/rest/api/content` +
+    const url = `${siteOrigin(baseUrl)}/wiki/rest/api/content` +
         `?spaceKey=${encodeURIComponent(spaceKey)}` +
         `&title=${encodeURIComponent(title)}` +
         `&expand=version`;
@@ -29,7 +37,7 @@ export async function findPage(spaceKey, title, baseUrl, auth) {
     return { id: page.id, version: page.version.number };
 }
 export async function createPage(spaceKey, parentId, title, body, baseUrl, auth) {
-    const data = (await apiRequest('POST', `${baseUrl}/wiki/rest/api/content`, auth, {
+    const data = (await apiRequest('POST', `${siteOrigin(baseUrl)}/wiki/rest/api/content`, auth, {
         type: 'page',
         title,
         space: { key: spaceKey },
@@ -39,7 +47,7 @@ export async function createPage(spaceKey, parentId, title, body, baseUrl, auth)
     return data.id;
 }
 export async function updatePage(pageId, title, body, version, baseUrl, auth) {
-    await apiRequest('PUT', `${baseUrl}/wiki/rest/api/content/${pageId}`, auth, {
+    await apiRequest('PUT', `${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}`, auth, {
         type: 'page',
         title,
         version: { number: version + 1 },
