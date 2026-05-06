@@ -3,8 +3,8 @@ import { join } from 'node:path';
 
 const HEADER =
   '# Snapshot History\n\n' +
-  '| Snapshot | +Pages | ~Pages | −Pages | Affected Pages | Theme |\n' +
-  '|:---------|-------:|-------:|-------:|:---------------|:------|\n';
+  '| Snapshot | Changes | Affected Pages | Theme |\n' +
+  '|:---------|:--------|:---------------|:------|\n';
 
 export type HistoryEntry = {
   timestamp: string;      // e.g. "2026-05-01T09-39-13Z"
@@ -41,8 +41,9 @@ function buildRow(entry: HistoryEntry): string {
   const links = [`[Summary](${entry.timestamp}/summary.md)`];
   if (entry.lucidUrl) links.push(`[Lucid Snapshot](${entry.lucidUrl})`);
   const snapshotCell = `**${formatTimestamp(entry.timestamp)}**<br>${links.join(' · ')}`;
+  const changes = `+${entry.pagesAdded.length} ~${entry.pagesChanged.length} −${entry.pagesRemoved.length}`;
   const blurb = esc(extractBlurb(entry.summary));
-  return `| ${snapshotCell} | ${entry.pagesAdded.length} | ${entry.pagesChanged.length} | ${entry.pagesRemoved.length} | ${pagesCell} | ${blurb} |`;
+  return `| ${snapshotCell} | ${changes} | ${pagesCell} | ${blurb} |`;
 }
 
 export async function appendHistoryEntry(docDir: string, entry: HistoryEntry): Promise<void> {
