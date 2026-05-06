@@ -3,13 +3,15 @@ name: Daily Snapshot
 on:
   schedule:
     - cron: '0 9 * * 1-5'   # 09:00 UTC Mon–Fri (adjust to taste)
-  workflow_dispatch:          # manual trigger from the Actions tab
+  workflow_dispatch:
 
 jobs:
   snapshot:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
@@ -28,26 +30,35 @@ jobs:
           LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
+          LUCID_FOLDER_ID: ${{ vars.LUCID_FOLDER_ID }}
         run: |
+          FOLDER_FLAG=""
+          [ -n "$LUCID_FOLDER_ID" ] && FOLDER_FLAG="--lucid-folder $LUCID_FOLDER_ID"
           for id in $(jq -r '.[].id' docs.json); do
-            npx lucid-history snapshot "$id" --repo <your-org>/<your-snapshots-repo> --lucid-folder <your-automated-snapshots-folder-id> --auto-merge
+            npx lucid-history snapshot "$id" \
+              --repo "${{ github.repository }}" \
+              --auto-merge \
+              $FOLDER_FLAG
           done
 
       - name: Update Confluence
         env:
           CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
+          CONFLUENCE_URL: ${{ vars.CONFLUENCE_URL }}
+          CONFLUENCE_EMAIL: ${{ vars.CONFLUENCE_EMAIL }}
+          CONFLUENCE_SPACE: ${{ vars.CONFLUENCE_SPACE }}
           CONFLUENCE_PARENT_ID: ${{ vars.CONFLUENCE_PARENT_ID }}
         run: |
           if [ -z "$CONFLUENCE_TOKEN" ] || [ -z "$CONFLUENCE_PARENT_ID" ]; then
-            echo "CONFLUENCE_TOKEN or CONFLUENCE_PARENT_ID not set — skipping Confluence update"
+            echo "CONFLUENCE_TOKEN or CONFLUENCE_PARENT_ID not set — skipping"
             exit 0
           fi
           git pull origin main
           npx lucid-history confluence-update \
             --local . \
-            --repo <your-org>/<your-snapshots-repo> \
-            --confluence-url https://<your-org>.atlassian.net \
-            --confluence-email <your-email> \
+            --repo "${{ github.repository }}" \
+            --confluence-url "$CONFLUENCE_URL" \
+            --confluence-email "$CONFLUENCE_EMAIL" \
             --confluence-token "$CONFLUENCE_TOKEN" \
-            --confluence-space <your-space-key> \
+            --confluence-space "$CONFLUENCE_SPACE" \
             --confluence-parent "$CONFLUENCE_PARENT_ID"

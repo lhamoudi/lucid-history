@@ -129,7 +129,7 @@ Reads each doc's `HISTORY.md` from the local snapshots checkout, filters to the 
 
 `--out <file>` writes a Markdown digest file (committed to the snapshots repo by the workflow as `digests/<monday>.md`).
 
-When Confluence flags are provided, each week's digest is published as a separate Confluence page titled by the week label, created under the specified parent.
+When Confluence flags are provided, each week's digest is published as a separate Confluence page (one per week, titled by the week label) under the specified parent.
 
 ### `confluence-update` — publish snapshot history to Confluence
 
@@ -162,34 +162,49 @@ snapshots/
       <page-title>___<page-id>.png           one per changed page (only when changed)
 digests/
   2026-04-27.md                              weekly digest committed each Monday
+docs.json                                    list of tracked document IDs
 ```
 
 Folder names use the convention `<human-readable-name>___<id>` so the identifier is always unambiguous. Both doc titles and page names are sanitized (`[^a-zA-Z0-9_-]` → `_`); IDs are appended verbatim after `___`.
 
-## GitHub Actions
+## Setting up a snapshots repo
 
-Four ready-to-use workflows are provided:
+The [`templates/`](templates/) directory contains ready-to-use workflow files and a starter `docs.json` for bootstrapping a new snapshots repo:
 
-| Workflow | Trigger | Purpose |
-|---|---|---|
-| [`daily-snapshot.yml`](.github/workflows/daily-snapshot.yml) | Schedule (Mon–Fri 09:00 UTC) + manual | Snapshots every doc in `docs.json`; updates Confluence per-doc pages if configured |
-| [`manual-snapshot.yml`](.github/workflows/manual-snapshot.yml) | Actions tab → Run workflow | Snapshot a single doc ID or all docs; supports `--dry-run`; auto-merge opt-in (default off) |
-| [`compare.yml`](.github/workflows/compare.yml) | Actions tab → Run workflow | Compare two live doc IDs; summary shown inline, PNGs uploaded as ZIP artifact |
-| [`weekly-digest.yml`](.github/workflows/weekly-digest.yml) | Schedule (Mon 09:00 UTC) + manual | Recap of previous week: posts to Slack, commits digest file, publishes to Confluence (each optional) |
+```
+templates/
+  workflows/
+    daily-snapshot.yml     scheduled Mon–Fri + manual trigger
+    manual-snapshot.yml    manual trigger for on-demand snapshots
+    compare.yml            compare two live documents on demand
+    weekly-digest.yml      Monday digest to Slack / file / Confluence
+  docs.json                starter file — add your document IDs here
+```
 
-Add these secrets and variables to your snapshots repo (Settings → Secrets/Variables → Actions):
+To set up a new snapshots repo:
 
-| Secret | Used by | Description |
-|---|---|---|
-| `LUCID_API_KEY` | all snapshot workflows | Lucid REST API key |
-| `ANTHROPIC_API_KEY` | all snapshot workflows | Anthropic API key |
-| `SNAPSHOTS_GITHUB_TOKEN` | all workflows | GitHub PAT with `repo` scope for the snapshots repo |
-| `SLACK_WEBHOOK_URL` | `weekly-digest.yml` | Slack incoming webhook URL — omit to skip Slack posting |
-| `CONFLUENCE_TOKEN` | `daily-snapshot.yml`, `weekly-digest.yml` | Atlassian API token — omit to skip all Confluence publishing |
+1. Create a new **private** GitHub repo
+2. Copy `templates/workflows/` to `.github/workflows/` in the new repo
+3. Copy `templates/docs.json` to `docs.json` and add your document IDs
+4. Add secrets and variables (Settings → Secrets and variables → Actions):
 
-| Variable | Used by | Description |
-|---|---|---|
-| `CONFLUENCE_PARENT_ID` | `daily-snapshot.yml`, `weekly-digest.yml` | Page ID of the Confluence parent page for per-doc pages and weekly digests |
+| Secret | Description |
+|---|---|
+| `LUCID_API_KEY` | Lucid REST API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `SNAPSHOTS_GITHUB_TOKEN` | GitHub PAT with `repo` scope on this repo |
+| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL — omit to skip Slack posting |
+| `CONFLUENCE_TOKEN` | Atlassian API token — omit to skip all Confluence publishing |
+
+| Variable | Description |
+|---|---|
+| `LUCID_FOLDER_ID` | Lucid folder ID for automated snapshot copies — omit to skip |
+| `CONFLUENCE_URL` | e.g. `https://your-org.atlassian.net` |
+| `CONFLUENCE_EMAIL` | Atlassian account email |
+| `CONFLUENCE_SPACE` | Confluence space key, e.g. `MYSPACE` |
+| `CONFLUENCE_PARENT_ID` | Page ID of the Confluence parent page |
+
+All Confluence and Slack settings are optional — the workflows skip those steps if the relevant secret/variable is absent.
 
 ## Development
 
@@ -206,7 +221,7 @@ npm run build
 - [x] CLI (`fetch`, `diff`, `compare`, `snapshot`, `weekly-digest`, `confluence-update`)
 - [x] PNG rendering with hash-dedupe
 - [x] Git + PR flow via simple-git and @octokit/rest
-- [x] GitHub Actions workflows (daily, manual, compare, weekly-digest)
+- [x] GitHub Actions workflow templates (`templates/workflows/`)
 - [x] Lucid snapshot copies via `--lucid-folder`
 - [x] Auto-merge + branch deletion via `--auto-merge`
 - [x] `HISTORY.md` per-doc snapshot log (date, page counts, affected pages, AI theme blurb)

@@ -34,6 +34,9 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
+          CONFLUENCE_URL: ${{ vars.CONFLUENCE_URL }}
+          CONFLUENCE_EMAIL: ${{ vars.CONFLUENCE_EMAIL }}
+          CONFLUENCE_SPACE: ${{ vars.CONFLUENCE_SPACE }}
           CONFLUENCE_PARENT_ID: ${{ vars.CONFLUENCE_PARENT_ID }}
         run: |
           # Default to last week so Monday morning recaps the previous Mon–Sun
@@ -55,10 +58,10 @@ jobs:
 
           if [ -n "$CONFLUENCE_TOKEN" ] && [ -n "$CONFLUENCE_PARENT_ID" ]; then
             ARGS+=(
-              --confluence-url https://<your-org>.atlassian.net
-              --confluence-email <your-email>
+              --confluence-url "$CONFLUENCE_URL"
+              --confluence-email "$CONFLUENCE_EMAIL"
               --confluence-token "$CONFLUENCE_TOKEN"
-              --confluence-space <your-space-key>
+              --confluence-space "$CONFLUENCE_SPACE"
               --confluence-parent "$CONFLUENCE_PARENT_ID"
             )
           fi

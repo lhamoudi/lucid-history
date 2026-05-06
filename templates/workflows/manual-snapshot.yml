@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
@@ -42,18 +44,22 @@ jobs:
           LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
+          LUCID_FOLDER_ID: ${{ vars.LUCID_FOLDER_ID }}
         run: |
           FLAGS=""
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            FLAGS="$FLAGS --dry-run"
-          fi
-          if [ "${{ inputs.auto_merge }}" = "true" ]; then
-            FLAGS="$FLAGS --auto-merge"
-          fi
+          [ "${{ inputs.dry_run }}" = "true" ] && FLAGS="$FLAGS --dry-run"
+          [ "${{ inputs.auto_merge }}" = "true" ] && FLAGS="$FLAGS --auto-merge"
+          FOLDER_FLAG=""
+          [ -n "$LUCID_FOLDER_ID" ] && FOLDER_FLAG="--lucid-folder $LUCID_FOLDER_ID"
+
           if [ "${{ inputs.document }}" = "all" ]; then
             for id in $(jq -r '.[].id' docs.json); do
-              npx lucid-history snapshot "$id" --repo <your-org>/<your-snapshots-repo> --lucid-folder <your-automated-snapshots-folder-id> $FLAGS
+              npx lucid-history snapshot "$id" \
+                --repo "${{ github.repository }}" \
+                $FOLDER_FLAG $FLAGS
             done
           else
-            npx lucid-history snapshot "${{ inputs.document }}" --repo <your-org>/<your-snapshots-repo> --lucid-folder <your-automated-snapshots-folder-id> $FLAGS
+            npx lucid-history snapshot "${{ inputs.document }}" \
+              --repo "${{ github.repository }}" \
+              $FOLDER_FLAG $FLAGS
           fi
