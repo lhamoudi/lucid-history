@@ -405,18 +405,67 @@ program
       if (opts.slackWebhook) {
         const summaryGhUrl = `https://github.com/${owner}/${name}/blob/main/snapshots/${relative(join(opts.local, 'snapshots'), snapshotDir)}/summary.md`;
         const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
-        const cleanSummary = summary.replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/, '').trim();
-        const slackText = `*${doc.title}* — ${changedPages.length} page(s) changed\n\n${cleanSummary}\n\n<${summaryGhUrl}|Full Summary> · <${lucidUrl}|View in Lucid>`;
+        const cleanSummary = toMrkdwn(
+          summary
+            .replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/s, '')
+            .replace(/^##\s+.+\n?/, '')
+            .trim(),
+        );
+        const pageWord = changedPages.length === 1 ? 'page' : 'pages';
+        const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+        const payload = {
+          text: `📊 ${doc.title} — ${changedPages.length} ${pageWord} changed`,
+          blocks: [
+            {
+              type: 'header',
+              text: { type: 'plain_text', text: `📊 ${doc.title}`, emoji: true },
+            },
+            {
+              type: 'context',
+              elements: [{ type: 'mrkdwn', text: `${changedPages.length} ${pageWord} changed · ${dateStr}` }],
+            },
+            { type: 'divider' },
+            {
+              type: 'section',
+              text: { type: 'mrkdwn', text: cleanSummary },
+            },
+            { type: 'divider' },
+            {
+              type: 'actions',
+              elements: [
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '📄 Full Summary', emoji: true },
+                  url: summaryGhUrl,
+                },
+                {
+                  type: 'button',
+                  text: { type: 'plain_text', text: '🔗 View in Lucid', emoji: true },
+                  url: lucidUrl,
+                },
+              ],
+            },
+          ],
+        };
         const res = await fetch(opts.slackWebhook, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: slackText }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) console.warn(`[${doc.title}] Slack post failed: ${res.status}`);
         else console.log(`[${doc.title}] Slack notification sent.`);
       }
     },
   );
+
+function toMrkdwn(md: string): string {
+  return md
+    .replace(/^#{1,6}\s+(.+)$/gm, '*$1*')   // ## Heading → *Heading*
+    .replace(/\*\*(.+?)\*\*/g, '*$1*')        // **bold** → *bold*
+    .replace(/^---+$/gm, '')                  // remove --- dividers
+    .replace(/\n{3,}/g, '\n\n')              // collapse excess blank lines
+    .trim();
+}
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
