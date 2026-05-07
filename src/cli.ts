@@ -715,18 +715,23 @@ program
         }
 
         let latestSummary = '';
+        let latestSnapshotLabel = 'Latest Snapshot';
         try {
           const entries = (await readdir(docDir, { withFileTypes: true }))
             .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
             .sort((a, b) => b.name.localeCompare(a.name));
           if (entries.length > 0) {
-            const raw = await readFile(
-              join(docDir, entries[0].name, 'summary.md'),
-              'utf8',
-            );
+            const folderTs = entries[0].name;
+            const isoTs = folderTs.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z');
+            const tsDate = new Date(isoTs);
+            const tsLabel = tsDate.toLocaleDateString('en-US', {
+              month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+            }) + ' ' + tsDate.toISOString().slice(11, 16) + ' UTC';
+            latestSnapshotLabel = `Latest Snapshot — ${tsLabel}`;
+            const raw = await readFile(join(docDir, folderTs, 'summary.md'), 'utf8');
             // Strip page-renders section — relative image paths don't work in Confluence
             const stripped = raw.replace(/\n\n---\n\n## Page renders[\s\S]*$/, '');
-            const fullSummaryUrl = `${ghBase}/${entries[0].name}/summary.md`;
+            const fullSummaryUrl = `${ghBase}/${folderTs}/summary.md`;
             latestSummary = `${stripped}\n\n[Full Summary](${fullSummaryUrl})`;
           }
         } catch {
@@ -734,7 +739,7 @@ program
         }
 
         const parts: string[] = [];
-        if (latestSummary) parts.push(`## Latest Snapshot\n\n${latestSummary}`);
+        if (latestSummary) parts.push(`## ${latestSnapshotLabel}\n\n${latestSummary}`);
         if (historyMd) parts.push(`## Change History\n\n${historyMd}`);
 
         if (parts.length === 0) {
