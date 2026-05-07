@@ -150,7 +150,7 @@ export function markdownToStorage(md: string): string {
   const lines = md.split('\n');
   const out: string[] = [];
   let tablePhase: 'none' | 'header' | 'body' = 'none';
-  let inList = false;
+  let listDepth = 0;
   let pendingPara: string[] = [];
 
   function flushPara() {
@@ -160,7 +160,7 @@ export function markdownToStorage(md: string): string {
     }
   }
   function closeList() {
-    if (inList) { out.push('</ul>'); inList = false; }
+    while (listDepth > 0) { out.push('</ul>'); listDepth--; }
   }
   function closeTable() {
     if (tablePhase !== 'none') { out.push('</tbody></table>'); tablePhase = 'none'; }
@@ -200,10 +200,13 @@ export function markdownToStorage(md: string): string {
       continue;
     }
 
-    if (/^[-*]\s/.test(line)) {
+    const bulletMatch = line.match(/^( *)[-*] (.*)/);
+    if (bulletMatch) {
       flushPara(); closeTable();
-      if (!inList) { out.push('<ul>'); inList = true; }
-      out.push(`<li>${inline(line.slice(2))}</li>`);
+      const depth = bulletMatch[1].length >= 2 ? 2 : 1;
+      while (listDepth < depth) { out.push('<ul>'); listDepth++; }
+      while (listDepth > depth) { out.push('</ul>'); listDepth--; }
+      out.push(`<li>${inline(bulletMatch[2])}</li>`);
       continue;
     }
 
