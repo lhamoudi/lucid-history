@@ -352,7 +352,10 @@ program
         console.log(`[${doc.title}] Done.`);
     }
     if (opts.slackWebhook) {
-        const slackText = `*${doc.title}* — ${changedPages.length} page(s) changed\n\n${summary.replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/, '').trim()}\n\n<${url}|View PR>`;
+        const summaryGhUrl = `https://github.com/${owner}/${name}/blob/main/snapshots/${relative(join(opts.local, 'snapshots'), snapshotDir)}/summary.md`;
+        const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
+        const cleanSummary = summary.replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/, '').trim();
+        const slackText = `*${doc.title}* — ${changedPages.length} page(s) changed\n\n${cleanSummary}\n\n<${summaryGhUrl}|Full Summary> · <${lucidUrl}|View in Lucid>`;
         const res = await fetch(opts.slackWebhook, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
