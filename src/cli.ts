@@ -462,6 +462,7 @@ function toMrkdwn(md: string): string {
   return md
     .replace(/^#{1,6}\s+(.+)$/gm, '*$1*')   // ## Heading → *Heading*
     .replace(/\*\*(.+?)\*\*/g, '*$1*')        // **bold** → *bold*
+    .replace(/^(\s*)[-*] /gm, '$1• ')         // - item / * item → • item (preserves indent)
     .replace(/^---+$/gm, '')                  // remove --- dividers
     .replace(/\n{3,}/g, '\n\n')              // collapse excess blank lines
     .trim();
