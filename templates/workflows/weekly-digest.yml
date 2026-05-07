@@ -32,7 +32,7 @@ jobs:
 
       - name: Send weekly digest
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ vars.SLACK_WEBHOOK_URL }}
           CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
           CONFLUENCE_URL: ${{ vars.CONFLUENCE_URL }}
           CONFLUENCE_EMAIL: ${{ vars.CONFLUENCE_EMAIL }}

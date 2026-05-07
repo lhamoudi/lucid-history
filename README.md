@@ -197,11 +197,11 @@ To set up a new snapshots repo:
 | `LUCID_API_KEY` | Lucid REST API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
 | `SNAPSHOTS_GITHUB_TOKEN` | GitHub PAT with `repo` scope on this repo |
-| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL — omit to skip Slack posting |
 | `CONFLUENCE_TOKEN` | Atlassian API token — omit to skip all Confluence publishing |
 
 | Variable | Description |
 |---|---|
+| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL — omit to skip Slack posting |
 | `LUCID_FOLDER_ID` | Lucid folder ID for automated snapshot copies — omit to skip |
 | `CONFLUENCE_URL` | e.g. `https://your-org.atlassian.net` |
 | `CONFLUENCE_EMAIL` | Atlassian account email |
