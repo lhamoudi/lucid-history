@@ -160,10 +160,11 @@ program
   .option('--skip-renders', 'Skip PNG exports (useful while Lucid PNG endpoint is unverified)', false)
   .option('--lucid-folder <id>', 'Lucid folder ID to save snapshot copies into (e.g. __AUTOMATED_SNAPSHOTS)')
   .option('--auto-merge', 'Automatically merge the PR after opening it', false)
+  .option('--slack-webhook <url>', 'Slack incoming webhook URL — posts the summary when changes are detected')
   .action(
     async (
       docId: string,
-      opts: { repo: string; local: string; dryRun: boolean; skipRenders: boolean; lucidFolder?: string; autoMerge: boolean },
+      opts: { repo: string; local: string; dryRun: boolean; skipRenders: boolean; lucidFolder?: string; autoMerge: boolean; slackWebhook?: string },
     ) => {
       const [owner, name] = opts.repo.split('/');
 
@@ -400,6 +401,16 @@ program
         console.log(`[${doc.title}] Merging PR and deleting branch...`);
         await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
         console.log(`[${doc.title}] Done.`);
+      }
+      if (opts.slackWebhook) {
+        const slackText = `*${doc.title}* — ${changedPages.length} page(s) changed\n\n${summary.replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/, '').trim()}\n\n<${url}|View PR>`;
+        const res = await fetch(opts.slackWebhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: slackText }),
+        });
+        if (!res.ok) console.warn(`[${doc.title}] Slack post failed: ${res.status}`);
+        else console.log(`[${doc.title}] Slack notification sent.`);
       }
     },
   );

@@ -31,14 +31,18 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
           LUCID_FOLDER_ID: ${{ vars.LUCID_FOLDER_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           FOLDER_FLAG=""
           [ -n "$LUCID_FOLDER_ID" ] && FOLDER_FLAG="--lucid-folder $LUCID_FOLDER_ID"
+          SLACK_FLAG=""
+          [ -n "$SLACK_WEBHOOK_URL" ] && SLACK_FLAG="--slack-webhook $SLACK_WEBHOOK_URL"
           for id in $(jq -r '.[].id' docs.json); do
             npx lucid-history snapshot "$id" \
               --repo "${{ github.repository }}" \
               --auto-merge \
-              $FOLDER_FLAG
+              $FOLDER_FLAG \
+              $SLACK_FLAG
           done
 
       - name: Update Confluence
