@@ -507,25 +507,53 @@ function formatMarkdownDigest(digests: DocDigest[], opts: DigestFormatOpts): str
   return `# ${digestWeekLabel(opts.start)} — Lucidchart Diagram Digest\n\n${sections.join('\n\n')}`;
 }
 
-function formatSlackDigest(digests: DocDigest[], opts: DigestFormatOpts): string {
-  const sections = digests.map(doc => {
-    const title = `*${doc.title}*`;
-    if (doc.rows.length === 0) return `${title}\n_No changes this week._`;
-
-    const bullets = doc.rows.map(row => {
-      const d = new Date(row.isoDate + 'T00:00:00Z');
-      const time = row.timestamp.slice(11, 16);
-      const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
-      const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
-      const pages = row.affectedPages || '—';
-      const url = digestRowUrl(doc, row, opts.owner, opts.repo);
-      return `• *${dateLine}* — ${counts} · ${pages}\n  ${row.theme} <${url}|Summary>`;
+function buildSlackDigestPayloads(digests: DocDigest[], opts: DigestFormatOpts): object[] {
+  const weekLabel = digestWeekLabel(opts.start);
+  return digests
+    .filter(doc => doc.rows.length > 0)
+    .map(doc => {
+      const docId = doc.docFolder.split('___').pop() ?? '';
+      const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
+      const bullets = doc.rows.map(row => {
+        const d = new Date(row.isoDate + 'T00:00:00Z');
+        const time = row.timestamp.slice(11, 16);
+        const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
+        const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
+        const pages = row.affectedPages || '—';
+        const url = digestRowUrl(doc, row, opts.owner, opts.repo);
+        return `• *${dateLine}* — ${counts} · ${pages}\n  ${row.theme} <${url}|Summary>`;
+      });
+      const snapshotWord = doc.rows.length === 1 ? 'snapshot' : 'snapshots';
+      return {
+        text: `📊 ${doc.title} — ${doc.rows.length} ${snapshotWord} this week`,
+        blocks: [
+          {
+            type: 'header',
+            text: { type: 'plain_text', text: `📊 ${doc.title}`, emoji: true },
+          },
+          {
+            type: 'context',
+            elements: [{ type: 'mrkdwn', text: `${weekLabel} · ${doc.rows.length} ${snapshotWord}` }],
+          },
+          { type: 'divider' },
+          {
+            type: 'section',
+            text: { type: 'mrkdwn', text: bullets.join('\n\n') },
+          },
+          { type: 'divider' },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: { type: 'plain_text', text: '🔗 View in Lucid', emoji: true },
+                url: lucidUrl,
+              },
+            ],
+          },
+        ],
+      };
     });
-
-    return `${title}\n${bullets.join('\n')}`;
-  });
-
-  return `*${digestWeekLabel(opts.start)} — Lucidchart Diagram Digest*\n\n${sections.join('\n\n')}`;
 }
 
 program
@@ -595,13 +623,16 @@ program
       }
 
       if (opts.slackWebhook) {
-        const res = await fetch(opts.slackWebhook, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: formatSlackDigest(digests, fmtOpts) }),
-        });
-        if (!res.ok) throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
-        console.log('Weekly digest posted to Slack.');
+        const payloads = buildSlackDigestPayloads(digests, fmtOpts);
+        for (const payload of payloads) {
+          const res = await fetch(opts.slackWebhook, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
+        }
+        console.log(`Weekly digest posted to Slack (${payloads.length} message(s)).`);
       }
 
       if (hasConfluence) {
