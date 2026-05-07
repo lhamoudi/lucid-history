@@ -1,0 +1,67 @@
+name: Lucid Digest (Slack)
+
+on:
+  repository_dispatch:
+    types: [lucid-digest]
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install lucid-history
+        run: npm install github:lhamoudi/lucid-history
+
+      - name: Run digest and post result
+        run: |
+          WEEK="${{ github.event.client_payload.week }}"
+          RESPONSE_URL="${{ github.event.client_payload.response_url }}"
+          USER="${{ github.event.client_payload.user_name }}"
+
+          WEEK_FLAG=""
+          [ -n "$WEEK" ] && WEEK_FLAG="--week $WEEK"
+
+          if RESULT=$(npx lucid-history weekly-digest \
+            --repo "${{ github.repository }}" \
+            --local . \
+            --dry-run \
+            $WEEK_FLAG 2>&1); then
+
+            if [ -z "$RESULT" ]; then
+              curl -s -X POST "$RESPONSE_URL" \
+                -H "Content-Type: application/json" \
+                -d "$(jq -n --arg user "$USER" '{
+                  response_type: "in_channel",
+                  blocks: [
+                    { type: "section", text: { type: "mrkdwn", text: "📋 *No changes found* for the requested week." } },
+                    { type: "context", elements: [{ type: "mrkdwn", text: ("Requested by @" + $user) }] }
+                  ]
+                }')"
+            else
+              curl -s -X POST "$RESPONSE_URL" \
+                -H "Content-Type: application/json" \
+                -d "$(jq -n \
+                  --arg result "$RESULT" \
+                  --arg user "$USER" \
+                  '{
+                    response_type: "in_channel",
+                    blocks: [
+                      { type: "header", text: { type: "plain_text", text: "📋 Weekly Digest", emoji: true } },
+                      { type: "context", elements: [{ type: "mrkdwn", text: ("Requested by @" + $user) }] },
+                      { type: "divider" },
+                      { type: "section", text: { type: "mrkdwn", text: $result } }
+                    ]
+                  }')"
+            fi
+          else
+            curl -s -X POST "$RESPONSE_URL" \
+              -H "Content-Type: application/json" \
+              -d '{"response_type":"in_channel","text":"❌ Digest failed. Check GitHub Actions logs."}'
+          fi

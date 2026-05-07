@@ -1,0 +1,66 @@
+name: Lucid Compare (Slack)
+
+on:
+  repository_dispatch:
+    types: [lucid-compare]
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install lucid-history
+        run: npm install github:lhamoudi/lucid-history
+
+      - name: Run compare and post result
+        env:
+          LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          BASE_ID="${{ github.event.client_payload.base_id }}"
+          HEAD_ID="${{ github.event.client_payload.head_id }}"
+          RESPONSE_URL="${{ github.event.client_payload.response_url }}"
+          USER="${{ github.event.client_payload.user_name }}"
+
+          if RESULT=$(npx lucid-history compare "$BASE_ID" "$HEAD_ID" --skip-renders --local . 2>&1); then
+            BASE_URL="https://lucid.app/lucidchart/${BASE_ID}/edit"
+            HEAD_URL="https://lucid.app/lucidchart/${HEAD_ID}/edit"
+            PAYLOAD=$(jq -n \
+              --arg result "$RESULT" \
+              --arg base_url "$BASE_URL" \
+              --arg head_url "$HEAD_URL" \
+              --arg user "$USER" \
+              '{
+                response_type: "in_channel",
+                blocks: [
+                  { type: "header", text: { type: "plain_text", text: "🔍 Compare Results", emoji: true } },
+                  { type: "context", elements: [{ type: "mrkdwn", text: ("Requested by @" + $user) }] },
+                  { type: "divider" },
+                  { type: "section", text: { type: "mrkdwn", text: $result } },
+                  { type: "divider" },
+                  {
+                    type: "actions",
+                    elements: [
+                      { type: "button", text: { type: "plain_text", text: "📄 View Base in Lucid", emoji: true }, url: $base_url },
+                      { type: "button", text: { type: "plain_text", text: "📄 View Head in Lucid", emoji: true }, url: $head_url }
+                    ]
+                  }
+                ]
+              }')
+          else
+            PAYLOAD=$(jq -n --arg result "$RESULT" '{
+              response_type: "in_channel",
+              text: ("❌ Compare failed:\n```" + $result + "```")
+            }')
+          fi
+
+          curl -s -X POST "$RESPONSE_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"

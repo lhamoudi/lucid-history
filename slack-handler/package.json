@@ -1,0 +1,8 @@
+{
+  "name": "lucid-slack-handler",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@vercel/node": "^3.0.0"
+  }
+}

@@ -178,11 +178,14 @@ The [`templates/`](templates/) directory contains ready-to-use workflow files an
 ```
 templates/
   workflows/
-    daily-snapshot.yml     scheduled Mon–Fri + manual trigger
-    manual-snapshot.yml    manual trigger for on-demand snapshots
-    compare.yml            compare two live documents on demand
-    weekly-digest.yml      Monday digest to Slack / file / Confluence
-  docs.json                starter file — add your document IDs here
+    daily-snapshot.yml      scheduled Mon–Fri + manual trigger
+    manual-snapshot.yml     manual trigger for on-demand snapshots
+    compare.yml             compare two live documents on demand
+    weekly-digest.yml       Monday digest to Slack / file / Confluence
+    compare-dispatch.yml    Slack bot: /lucid compare
+    snapshot-dispatch.yml   Slack bot: /lucid snapshot
+    digest-dispatch.yml     Slack bot: /lucid digest
+  docs.json                 starter file — add your document IDs here
 ```
 
 To set up a new snapshots repo:
@@ -210,6 +213,61 @@ To set up a new snapshots repo:
 
 All Confluence and Slack settings are optional — the workflows skip those steps if the relevant secret/variable is absent.
 
+## Slack bot (`/lucid`)
+
+A Vercel serverless function in [`slack-handler/`](slack-handler/) powers a `/lucid` slash command that triggers CLI commands on demand from Slack.
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `/lucid compare <base-id> <head-id>` | AI diff between two Lucid documents |
+| `/lucid snapshot <doc-id>` | On-demand snapshot of any tracked doc |
+| `/lucid digest [YYYY-MM-DD]` | Weekly digest for the given week |
+
+Results post back to the same Slack channel ~60s later via GitHub Actions.
+
+### Architecture
+
+```
+/lucid compare abc def
+  → Vercel function validates Slack signature, responds "Running…" (<3s)
+  → Fires GitHub repository_dispatch: lucid-compare
+  → compare-dispatch.yml runs lucid-history compare
+  → POSTs Block Kit result back to Slack via response_url
+```
+
+### Setup
+
+**1. Deploy the Vercel function**
+
+```bash
+cd slack-handler
+npx vercel --prod
+```
+
+Set these environment variables in Vercel (Settings → Environment Variables):
+
+| Variable | Value |
+|---|---|
+| `SLACK_SIGNING_SECRET` | From your Slack app (Basic Information → Signing Secret) |
+| `GH_DISPATCH_TOKEN` | GitHub PAT with `repo` scope on the snapshots repo |
+| `SNAPSHOTS_REPO` | e.g. `your-org/your-snapshots-repo` |
+
+**2. Create the Slack app**
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → Create New App → From scratch
+2. **Slash Commands** → Create New Command:
+   - Command: `/lucid`
+   - Request URL: `https://your-vercel-app.vercel.app/api/lucid`
+   - Short Description: `Lucidchart diagram commands`
+   - Usage Hint: `compare <base-id> <head-id> | snapshot <doc-id> | digest [YYYY-MM-DD]`
+3. **Install to Workspace**
+
+**3. Add dispatch workflows to the snapshots repo**
+
+Copy `templates/workflows/compare-dispatch.yml`, `snapshot-dispatch.yml`, and `digest-dispatch.yml` to `.github/workflows/` in the snapshots repo. No additional secrets needed beyond what's already configured for daily snapshots.
+
 ## Development
 
 ```bash
@@ -233,6 +291,7 @@ npm run build
 - [x] Confluence page publishing via `confluence-update` (per-doc) + `weekly-digest` (per-week)
 - [x] Exponential backoff retries on all Lucid API calls
 - [x] Lucid PNG export verified and working
+- [x] Slack bot (`/lucid compare`, `/lucid snapshot`, `/lucid digest`) via Vercel + GitHub Actions dispatch
 
 ## License
 

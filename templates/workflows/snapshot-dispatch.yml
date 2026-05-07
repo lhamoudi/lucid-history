@@ -1,0 +1,65 @@
+name: Lucid Snapshot (Slack)
+
+on:
+  repository_dispatch:
+    types: [lucid-snapshot]
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install lucid-history
+        run: npm install github:lhamoudi/lucid-history
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+      - name: Run snapshot and post result
+        env:
+          LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
+          LUCID_FOLDER_ID: ${{ vars.LUCID_FOLDER_ID }}
+        run: |
+          DOC_ID="${{ github.event.client_payload.doc_id }}"
+          RESPONSE_URL="${{ github.event.client_payload.response_url }}"
+          USER="${{ github.event.client_payload.user_name }}"
+
+          FOLDER_FLAG=""
+          [ -n "$LUCID_FOLDER_ID" ] && FOLDER_FLAG="--lucid-folder $LUCID_FOLDER_ID"
+
+          # Pass response_url as the Slack webhook — the CLI posts the Block Kit result directly.
+          # If no changes are detected the CLI exits silently, so we check and post a fallback.
+          npx lucid-history snapshot "$DOC_ID" \
+            --repo "${{ github.repository }}" \
+            --local . \
+            --auto-merge \
+            --slack-webhook "$RESPONSE_URL" \
+            $FOLDER_FLAG > /tmp/snapshot_out.txt 2>&1
+          EXIT_CODE=$?
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            curl -s -X POST "$RESPONSE_URL" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n '{response_type:"in_channel","text":"❌ Snapshot failed. Check GitHub Actions logs."}')"
+          elif ! grep -q "Slack notification sent" /tmp/snapshot_out.txt; then
+            curl -s -X POST "$RESPONSE_URL" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n --arg user "$USER" '{
+                response_type: "in_channel",
+                blocks: [
+                  { type: "section", text: { type: "mrkdwn", text: "✅ *No changes detected* — snapshot is up to date." } },
+                  { type: "context", elements: [{ type: "mrkdwn", text: ("Requested by @" + $user) }] }
+                ]
+              }')"
+          fi
