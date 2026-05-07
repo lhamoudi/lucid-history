@@ -8,6 +8,13 @@ import type {
   LineRef,
 } from './types.js';
 
+const DATE_ONLY_RE =
+  /^(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}$|^\d{1,2}\/\d{1,2}\/\d{4}$|^\d{4}-\d{2}-\d{2}$/i;
+
+function isDateStamp(text: string): boolean {
+  return DATE_ONLY_RE.test(text.trim());
+}
+
 function shapeText(shape: LucidShape): string {
   return (shape.textAreas ?? [])
     .filter((t) => t.label !== 'ReadonlyAttributionText')
@@ -80,7 +87,7 @@ export function diff(base: LucidDocument, head: LucidDocument): DocDiff {
       shapesTextChanged: [...hs.entries()]
         .filter(([id, v]) => {
           const b = bs.get(id);
-          return b !== undefined && b.text !== v.text;
+          return b !== undefined && b.text !== v.text && !(isDateStamp(b.text) && isDateStamp(v.text));
         })
         .map(([id, v]) => ({ id, class: v.class, before: bs.get(id)!.text, after: v.text })),
       shapesClassChanged: [...hs.entries()]
