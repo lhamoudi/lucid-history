@@ -405,12 +405,17 @@ program
       if (opts.slackWebhook) {
         const summaryGhUrl = `https://github.com/${owner}/${name}/blob/main/snapshots/${relative(join(opts.local, 'snapshots'), snapshotDir)}/summary.md`;
         const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
-        const cleanSummary = toMrkdwn(
+        const SLACK_MAX = 2900;
+        const truncNote = `\n\n_[truncated — see <${summaryGhUrl}|Full Summary> for complete details]_`;
+        let cleanSummary = toMrkdwn(
           summary
             .replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/s, '')
             .replace(/^##\s+.+\n?/, '')
             .trim(),
         );
+        if (cleanSummary.length > SLACK_MAX) {
+          cleanSummary = cleanSummary.slice(0, SLACK_MAX - truncNote.length) + truncNote;
+        }
         const pageWord = changedPages.length === 1 ? 'page' : 'pages';
         const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
         const payload = {
