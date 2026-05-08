@@ -8,6 +8,7 @@ Write in clean markdown. Structure:
 - For each page in \`perPage\` that is NOT a rename-only change, write an H3 heading with the page title and a bullet list describing the material changes. Group related bullets (e.g. an added decision block plus two lines wiring it up should be one bullet about the new branch, not three).
 - When referring to lines, use the text of the connected shapes (fromText/toText fields) rather than shape ids.
 - Skip style/color noise. Focus on additions, removals, rewired connections, and text changes.
+- Skip diagram date stamp changes (e.g. "Updated date stamp from X to Y") — these are maintenance noise, not meaningful content changes.
 - Do not invent changes that aren't in the diff.
 - End with a one-line "Theme:" describing what the overall change accomplishes, if one is apparent.`;
 export async function summarizeDiff(docTitle, diff, opts = {}) {

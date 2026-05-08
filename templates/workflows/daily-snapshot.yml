@@ -32,17 +32,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
           LUCID_FOLDER_ID: ${{ vars.LUCID_FOLDER_ID }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
+          CONFLUENCE_URL: ${{ vars.CONFLUENCE_URL }}
+          CONFLUENCE_EMAIL: ${{ vars.CONFLUENCE_EMAIL }}
+          CONFLUENCE_SPACE: ${{ vars.CONFLUENCE_SPACE }}
+          CONFLUENCE_PARENT_ID: ${{ vars.CONFLUENCE_PARENT_ID }}
         run: |
           FOLDER_FLAG=""
           [ -n "$LUCID_FOLDER_ID" ] && FOLDER_FLAG="--lucid-folder $LUCID_FOLDER_ID"
           SLACK_FLAG=""
           [ -n "$SLACK_WEBHOOK_URL" ] && SLACK_FLAG="--slack-webhook $SLACK_WEBHOOK_URL"
+          CONFLUENCE_FLAGS=""
+          if [ -n "$CONFLUENCE_TOKEN" ] && [ -n "$CONFLUENCE_PARENT_ID" ]; then
+            CONFLUENCE_FLAGS="--confluence-url $CONFLUENCE_URL --confluence-email $CONFLUENCE_EMAIL --confluence-token $CONFLUENCE_TOKEN --confluence-space $CONFLUENCE_SPACE --confluence-parent $CONFLUENCE_PARENT_ID"
+          fi
           for id in $(jq -r '.[].id' docs.json); do
             npx lucid-history snapshot "$id" \
               --repo "${{ github.repository }}" \
               --auto-merge \
               $FOLDER_FLAG \
-              $SLACK_FLAG
+              $SLACK_FLAG \
+              $CONFLUENCE_FLAGS
           done
 
       - name: Update Confluence

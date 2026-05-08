@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { writeFile, readFile, mkdir, rm, readdir } from 'node:fs/promises';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, basename } from 'node:path';
 import { fetchDocument, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
@@ -11,7 +11,7 @@ import { renderChangedPages, renderComparedPages, isDateOnlyChange, type PageRen
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import { appendHistoryEntry } from './history.js';
 import { compileDigest, getWeekRange, type DocDigest } from './digest.js';
-import { upsertPage, markdownToStorage, absolutifyLinks } from './confluence.js';
+import { findPage, createPage, upsertPage, markdownToStorage, absolutifyLinks, createSnapshotPage, type SnapshotImage } from './confluence.js';
 import type { LucidDocument } from './types.js';
 
 
@@ -161,10 +161,20 @@ program
   .option('--lucid-folder <id>', 'Lucid folder ID to save snapshot copies into (e.g. __AUTOMATED_SNAPSHOTS)')
   .option('--auto-merge', 'Automatically merge the PR after opening it', false)
   .option('--slack-webhook <url>', 'Slack incoming webhook URL — posts the summary when changes are detected')
+  .option('--confluence-url <url>', 'Confluence base URL — create a per-snapshot child page here')
+  .option('--confluence-email <email>', 'Atlassian account email')
+  .option('--confluence-token <token>', 'Atlassian API token')
+  .option('--confluence-space <key>', 'Confluence space key')
+  .option('--confluence-parent <id>', 'Page ID of the Confluence parent page (per-doc pages live here)')
   .action(
     async (
       docId: string,
-      opts: { repo: string; local: string; dryRun: boolean; skipRenders: boolean; lucidFolder?: string; autoMerge: boolean; slackWebhook?: string },
+      opts: {
+        repo: string; local: string; dryRun: boolean; skipRenders: boolean;
+        lucidFolder?: string; autoMerge: boolean; slackWebhook?: string;
+        confluenceUrl?: string; confluenceEmail?: string; confluenceToken?: string;
+        confluenceSpace?: string; confluenceParent?: string;
+      },
     ) => {
       const [owner, name] = opts.repo.split('/');
 
@@ -402,11 +412,49 @@ program
         await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
         console.log(`[${doc.title}] Done.`);
       }
+      let confluenceSnapshotUrl: string | undefined;
+      const hasConfluence =
+        opts.confluenceUrl &&
+        opts.confluenceEmail &&
+        opts.confluenceToken &&
+        opts.confluenceSpace &&
+        opts.confluenceParent;
+      if (hasConfluence) {
+        try {
+          const cAuth = { email: opts.confluenceEmail!, token: opts.confluenceToken! };
+          const existingDocPage = await findPage(opts.confluenceSpace!, doc.title, opts.confluenceUrl!, cAuth);
+          let docPageId: string;
+          if (existingDocPage) {
+            docPageId = existingDocPage.id;
+          } else {
+            docPageId = await createPage(
+              opts.confluenceSpace!,
+              opts.confluenceParent!,
+              doc.title,
+              '<p>Auto-populated by lucid-history. Run <code>confluence-update</code> to populate full history.</p>',
+              opts.confluenceUrl!,
+              cAuth,
+            );
+          }
+          const images: SnapshotImage[] = await Promise.all(
+            renders.map(async (r) => ({ filename: basename(r.after), data: await readFile(r.after) })),
+          );
+          const snapshotPageTitle = `${doc.title} — ${timestampToLabel(timestamp)}`;
+          confluenceSnapshotUrl = await createSnapshotPage(
+            opts.confluenceSpace!, docPageId, snapshotPageTitle, summary, images, opts.confluenceUrl!, cAuth,
+          );
+          console.log(`[${doc.title}] Confluence snapshot page: ${confluenceSnapshotUrl}`);
+        } catch (err) {
+          console.warn(`[${doc.title}] Confluence snapshot page failed: ${(err as Error).message}`);
+        }
+      }
+
       if (opts.slackWebhook) {
         const summaryGhUrl = `https://github.com/${owner}/${name}/blob/main/snapshots/${relative(join(opts.local, 'snapshots'), snapshotDir)}/summary.md`;
+        const summaryUrl = confluenceSnapshotUrl ?? summaryGhUrl;
         const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
         const SLACK_MAX = 2900;
-        const truncNote = `\n\n_[truncated — see <${summaryGhUrl}|Full Summary> for complete details]_`;
+        const truncNote = `\n\n_[truncated — see <${summaryUrl}|Full Summary> for complete details]_`;
         let cleanSummary = toMrkdwn(
           summary
             .replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/s, '')
@@ -441,7 +489,7 @@ program
                 {
                   type: 'button',
                   text: { type: 'plain_text', text: '📄 Full Summary', emoji: true },
-                  url: summaryGhUrl,
+                  url: summaryUrl,
                 },
                 {
                   type: 'button',
@@ -471,6 +519,17 @@ function toMrkdwn(md: string): string {
     .replace(/^---+$/gm, '')                  // remove --- dividers
     .replace(/\n{3,}/g, '\n\n')              // collapse excess blank lines
     .trim();
+}
+
+function timestampToLabel(ts: string): string {
+  const iso = ts.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z');
+  const d = new Date(iso);
+  return (
+    d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) +
+    ' ' +
+    d.toISOString().slice(11, 16) +
+    ' UTC'
+  );
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -727,12 +786,7 @@ program
             .sort((a, b) => b.name.localeCompare(a.name));
           if (entries.length > 0) {
             const folderTs = entries[0].name;
-            const isoTs = folderTs.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z');
-            const tsDate = new Date(isoTs);
-            const tsLabel = tsDate.toLocaleDateString('en-US', {
-              month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC',
-            }) + ' ' + tsDate.toISOString().slice(11, 16) + ' UTC';
-            latestSnapshotLabel = `Latest Snapshot — ${tsLabel}`;
+            latestSnapshotLabel = `Latest Snapshot — ${timestampToLabel(folderTs)}`;
             const raw = await readFile(join(docDir, folderTs, 'summary.md'), 'utf8');
             // Strip page-renders section — relative image paths don't work in Confluence
             const stripped = raw.replace(/\n\n---\n\n## Page renders[\s\S]*$/, '');
@@ -755,7 +809,7 @@ program
         const pageBody = markdownToStorage(parts.join('\n\n'));
 
         console.log(`[${docTitle}] Upserting Confluence page...`);
-        await upsertPage(
+        const docPageId = await upsertPage(
           opts.confluenceSpace,
           opts.confluenceParent,
           docTitle,
@@ -763,6 +817,43 @@ program
           opts.confluenceUrl,
           auth,
         );
+        console.log(`[${docTitle}] Doc page done.`);
+
+        // Create per-snapshot child pages for any timestamp dirs not yet in Confluence.
+        const allTimeDirs = (await readdir(docDir, { withFileTypes: true }))
+          .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
+          .map((e) => e.name)
+          .sort();
+
+        for (const folderTs of allTimeDirs) {
+          const snapshotPageTitle = `${docTitle} — ${timestampToLabel(folderTs)}`;
+          const existing = await findPage(opts.confluenceSpace, snapshotPageTitle, opts.confluenceUrl, auth);
+          if (existing) continue;
+
+          let summaryMd = '';
+          try {
+            summaryMd = await readFile(join(docDir, folderTs, 'summary.md'), 'utf8');
+          } catch {
+            continue;
+          }
+
+          const pngFiles = await readdir(join(docDir, folderTs)).catch(() => [] as string[]);
+          const images: SnapshotImage[] = [];
+          for (const f of pngFiles.filter((f) => f.endsWith('.png'))) {
+            try {
+              images.push({ filename: f, data: await readFile(join(docDir, folderTs, f)) });
+            } catch { /* skip */ }
+          }
+
+          try {
+            await createSnapshotPage(
+              opts.confluenceSpace, docPageId, snapshotPageTitle, summaryMd, images, opts.confluenceUrl, auth,
+            );
+            console.log(`[${docTitle}] Created snapshot page: ${snapshotPageTitle}`);
+          } catch (err) {
+            console.warn(`[${docTitle}] Snapshot page failed for ${folderTs}: ${(err as Error).message}`);
+          }
+        }
         console.log(`[${docTitle}] Done.`);
       }
     },

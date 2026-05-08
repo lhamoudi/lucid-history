@@ -2,7 +2,7 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { writeFile, readFile, mkdir, rm, readdir } from 'node:fs/promises';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, basename } from 'node:path';
 import { fetchDocument, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
@@ -11,7 +11,7 @@ import { renderChangedPages, renderComparedPages, isDateOnlyChange } from './ren
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import { appendHistoryEntry } from './history.js';
 import { compileDigest, getWeekRange } from './digest.js';
-import { upsertPage, markdownToStorage, absolutifyLinks } from './confluence.js';
+import { findPage, createPage, upsertPage, markdownToStorage, absolutifyLinks, createSnapshotPage } from './confluence.js';
 function buildImageSection(renders) {
     if (renders.length === 0)
         return '';
@@ -141,6 +141,11 @@ program
     .option('--lucid-folder <id>', 'Lucid folder ID to save snapshot copies into (e.g. __AUTOMATED_SNAPSHOTS)')
     .option('--auto-merge', 'Automatically merge the PR after opening it', false)
     .option('--slack-webhook <url>', 'Slack incoming webhook URL — posts the summary when changes are detected')
+    .option('--confluence-url <url>', 'Confluence base URL — create a per-snapshot child page here')
+    .option('--confluence-email <email>', 'Atlassian account email')
+    .option('--confluence-token <token>', 'Atlassian API token')
+    .option('--confluence-space <key>', 'Confluence space key')
+    .option('--confluence-parent <id>', 'Page ID of the Confluence parent page (per-doc pages live here)')
     .action(async (docId, opts) => {
     const [owner, name] = opts.repo.split('/');
     console.log(`[${docId}] Cloning/opening snapshots repo...`);
@@ -351,15 +356,85 @@ program
         await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
         console.log(`[${doc.title}] Done.`);
     }
+    let confluenceSnapshotUrl;
+    const hasConfluence = opts.confluenceUrl &&
+        opts.confluenceEmail &&
+        opts.confluenceToken &&
+        opts.confluenceSpace &&
+        opts.confluenceParent;
+    if (hasConfluence) {
+        try {
+            const cAuth = { email: opts.confluenceEmail, token: opts.confluenceToken };
+            const existingDocPage = await findPage(opts.confluenceSpace, doc.title, opts.confluenceUrl, cAuth);
+            let docPageId;
+            if (existingDocPage) {
+                docPageId = existingDocPage.id;
+            }
+            else {
+                docPageId = await createPage(opts.confluenceSpace, opts.confluenceParent, doc.title, '<p>Auto-populated by lucid-history. Run <code>confluence-update</code> to populate full history.</p>', opts.confluenceUrl, cAuth);
+            }
+            const images = await Promise.all(renders.map(async (r) => ({ filename: basename(r.after), data: await readFile(r.after) })));
+            const snapshotPageTitle = `${doc.title} — ${timestampToLabel(timestamp)}`;
+            confluenceSnapshotUrl = await createSnapshotPage(opts.confluenceSpace, docPageId, snapshotPageTitle, summary, images, opts.confluenceUrl, cAuth);
+            console.log(`[${doc.title}] Confluence snapshot page: ${confluenceSnapshotUrl}`);
+        }
+        catch (err) {
+            console.warn(`[${doc.title}] Confluence snapshot page failed: ${err.message}`);
+        }
+    }
     if (opts.slackWebhook) {
         const summaryGhUrl = `https://github.com/${owner}/${name}/blob/main/snapshots/${relative(join(opts.local, 'snapshots'), snapshotDir)}/summary.md`;
+        const summaryUrl = confluenceSnapshotUrl ?? summaryGhUrl;
         const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
-        const cleanSummary = summary.replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/, '').trim();
-        const slackText = `*${doc.title}* — ${changedPages.length} page(s) changed\n\n${cleanSummary}\n\n<${summaryGhUrl}|Full Summary> · <${lucidUrl}|View in Lucid>`;
+        const SLACK_MAX = 2900;
+        const truncNote = `\n\n_[truncated — see <${summaryUrl}|Full Summary> for complete details]_`;
+        let cleanSummary = toMrkdwn(summary
+            .replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/s, '')
+            .replace(/^##\s+.+\n?/, '')
+            .trim());
+        if (cleanSummary.length > SLACK_MAX) {
+            cleanSummary = cleanSummary.slice(0, SLACK_MAX - truncNote.length) + truncNote;
+        }
+        const pageWord = changedPages.length === 1 ? 'page' : 'pages';
+        const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+        const payload = {
+            text: `📊 ${doc.title} — ${changedPages.length} ${pageWord} changed`,
+            blocks: [
+                {
+                    type: 'header',
+                    text: { type: 'plain_text', text: `📊 ${doc.title}`, emoji: true },
+                },
+                {
+                    type: 'context',
+                    elements: [{ type: 'mrkdwn', text: `${changedPages.length} ${pageWord} changed · ${dateStr}` }],
+                },
+                { type: 'divider' },
+                {
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: cleanSummary },
+                },
+                { type: 'divider' },
+                {
+                    type: 'actions',
+                    elements: [
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '📄 Full Summary', emoji: true },
+                            url: summaryUrl,
+                        },
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '🔗 View in Lucid', emoji: true },
+                            url: lucidUrl,
+                        },
+                    ],
+                },
+            ],
+        };
         const res = await fetch(opts.slackWebhook, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: slackText }),
+            body: JSON.stringify(payload),
         });
         if (!res.ok)
             console.warn(`[${doc.title}] Slack post failed: ${res.status}`);
@@ -367,6 +442,23 @@ program
             console.log(`[${doc.title}] Slack notification sent.`);
     }
 });
+function toMrkdwn(md) {
+    return md
+        .replace(/^#{1,6}\s+(.+)$/gm, '*$1*') // ## Heading → *Heading*
+        .replace(/\*\*(.+?)\*\*/g, '*$1*') // **bold** → *bold*
+        .replace(/^(\s*)[-*] /gm, '$1• ') // - item / * item → • item (preserves indent)
+        .replace(/^---+$/gm, '') // remove --- dividers
+        .replace(/\n{3,}/g, '\n\n') // collapse excess blank lines
+        .trim();
+}
+function timestampToLabel(ts) {
+    const iso = ts.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z');
+    const d = new Date(iso);
+    return (d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) +
+        ' ' +
+        d.toISOString().slice(11, 16) +
+        ' UTC');
+}
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function shortDate(d) {
@@ -398,11 +490,13 @@ function formatMarkdownDigest(digests, opts) {
     });
     return `# ${digestWeekLabel(opts.start)} — Lucidchart Diagram Digest\n\n${sections.join('\n\n')}`;
 }
-function formatSlackDigest(digests, opts) {
-    const sections = digests.map(doc => {
-        const title = `*${doc.title}*`;
-        if (doc.rows.length === 0)
-            return `${title}\n_No changes this week._`;
+function buildSlackDigestPayloads(digests, opts) {
+    const weekLabel = digestWeekLabel(opts.start);
+    return digests
+        .filter(doc => doc.rows.length > 0)
+        .map(doc => {
+        const docId = doc.docFolder.split('___').pop() ?? '';
+        const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
         const bullets = doc.rows.map(row => {
             const d = new Date(row.isoDate + 'T00:00:00Z');
             const time = row.timestamp.slice(11, 16);
@@ -412,9 +506,37 @@ function formatSlackDigest(digests, opts) {
             const url = digestRowUrl(doc, row, opts.owner, opts.repo);
             return `• *${dateLine}* — ${counts} · ${pages}\n  ${row.theme} <${url}|Summary>`;
         });
-        return `${title}\n${bullets.join('\n')}`;
+        const snapshotWord = doc.rows.length === 1 ? 'snapshot' : 'snapshots';
+        return {
+            text: `📊 ${doc.title} — ${doc.rows.length} ${snapshotWord} this week`,
+            blocks: [
+                {
+                    type: 'header',
+                    text: { type: 'plain_text', text: `📊 ${doc.title}`, emoji: true },
+                },
+                {
+                    type: 'context',
+                    elements: [{ type: 'mrkdwn', text: `${weekLabel} · ${doc.rows.length} ${snapshotWord}` }],
+                },
+                { type: 'divider' },
+                {
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: bullets.join('\n\n') },
+                },
+                { type: 'divider' },
+                {
+                    type: 'actions',
+                    elements: [
+                        {
+                            type: 'button',
+                            text: { type: 'plain_text', text: '🔗 View in Lucid', emoji: true },
+                            url: lucidUrl,
+                        },
+                    ],
+                },
+            ],
+        };
     });
-    return `*${digestWeekLabel(opts.start)} — Lucidchart Diagram Digest*\n\n${sections.join('\n\n')}`;
 }
 program
     .command('weekly-digest')
@@ -460,14 +582,17 @@ program
         console.log(`Wrote digest to ${opts.out}`);
     }
     if (opts.slackWebhook) {
-        const res = await fetch(opts.slackWebhook, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: formatSlackDigest(digests, fmtOpts) }),
-        });
-        if (!res.ok)
-            throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
-        console.log('Weekly digest posted to Slack.');
+        const payloads = buildSlackDigestPayloads(digests, fmtOpts);
+        for (const payload of payloads) {
+            const res = await fetch(opts.slackWebhook, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok)
+                throw new Error(`Slack webhook returned ${res.status}: ${await res.text()}`);
+        }
+        console.log(`Weekly digest posted to Slack (${payloads.length} message(s)).`);
     }
     if (hasConfluence) {
         const auth = { email: opts.confluenceEmail, token: opts.confluenceToken };
@@ -525,15 +650,18 @@ program
             // No history yet — leave empty
         }
         let latestSummary = '';
+        let latestSnapshotLabel = 'Latest Snapshot';
         try {
             const entries = (await readdir(docDir, { withFileTypes: true }))
                 .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
                 .sort((a, b) => b.name.localeCompare(a.name));
             if (entries.length > 0) {
-                const raw = await readFile(join(docDir, entries[0].name, 'summary.md'), 'utf8');
+                const folderTs = entries[0].name;
+                latestSnapshotLabel = `Latest Snapshot — ${timestampToLabel(folderTs)}`;
+                const raw = await readFile(join(docDir, folderTs, 'summary.md'), 'utf8');
                 // Strip page-renders section — relative image paths don't work in Confluence
                 const stripped = raw.replace(/\n\n---\n\n## Page renders[\s\S]*$/, '');
-                const fullSummaryUrl = `${ghBase}/${entries[0].name}/summary.md`;
+                const fullSummaryUrl = `${ghBase}/${folderTs}/summary.md`;
                 latestSummary = `${stripped}\n\n[Full Summary](${fullSummaryUrl})`;
             }
         }
@@ -542,7 +670,7 @@ program
         }
         const parts = [];
         if (latestSummary)
-            parts.push(`## Latest Snapshot\n\n${latestSummary}`);
+            parts.push(`## ${latestSnapshotLabel}\n\n${latestSummary}`);
         if (historyMd)
             parts.push(`## Change History\n\n${historyMd}`);
         if (parts.length === 0) {
@@ -551,7 +679,41 @@ program
         }
         const pageBody = markdownToStorage(parts.join('\n\n'));
         console.log(`[${docTitle}] Upserting Confluence page...`);
-        await upsertPage(opts.confluenceSpace, opts.confluenceParent, docTitle, pageBody, opts.confluenceUrl, auth);
+        const docPageId = await upsertPage(opts.confluenceSpace, opts.confluenceParent, docTitle, pageBody, opts.confluenceUrl, auth);
+        console.log(`[${docTitle}] Doc page done.`);
+        // Create per-snapshot child pages for any timestamp dirs not yet in Confluence.
+        const allTimeDirs = (await readdir(docDir, { withFileTypes: true }))
+            .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
+            .map((e) => e.name)
+            .sort();
+        for (const folderTs of allTimeDirs) {
+            const snapshotPageTitle = `${docTitle} — ${timestampToLabel(folderTs)}`;
+            const existing = await findPage(opts.confluenceSpace, snapshotPageTitle, opts.confluenceUrl, auth);
+            if (existing)
+                continue;
+            let summaryMd = '';
+            try {
+                summaryMd = await readFile(join(docDir, folderTs, 'summary.md'), 'utf8');
+            }
+            catch {
+                continue;
+            }
+            const pngFiles = await readdir(join(docDir, folderTs)).catch(() => []);
+            const images = [];
+            for (const f of pngFiles.filter((f) => f.endsWith('.png'))) {
+                try {
+                    images.push({ filename: f, data: await readFile(join(docDir, folderTs, f)) });
+                }
+                catch { /* skip */ }
+            }
+            try {
+                await createSnapshotPage(opts.confluenceSpace, docPageId, snapshotPageTitle, summaryMd, images, opts.confluenceUrl, auth);
+                console.log(`[${docTitle}] Created snapshot page: ${snapshotPageTitle}`);
+            }
+            catch (err) {
+                console.warn(`[${docTitle}] Snapshot page failed for ${folderTs}: ${err.message}`);
+            }
+        }
         console.log(`[${docTitle}] Done.`);
     }
 });

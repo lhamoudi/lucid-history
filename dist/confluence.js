@@ -58,10 +58,57 @@ export async function upsertPage(spaceKey, parentId, title, body, baseUrl, auth)
     const existing = await findPage(spaceKey, title, baseUrl, auth);
     if (existing) {
         await updatePage(existing.id, title, body, existing.version, baseUrl, auth);
+        return existing.id;
     }
     else {
-        await createPage(spaceKey, parentId, title, body, baseUrl, auth);
+        return await createPage(spaceKey, parentId, title, body, baseUrl, auth);
     }
+}
+export async function uploadAttachment(pageId, filename, data, baseUrl, auth) {
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(data)], { type: 'image/png' }), filename);
+    const res = await fetch(`${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}/child/attachment`, {
+        method: 'POST',
+        headers: {
+            Authorization: authHeader(auth),
+            'X-Atlassian-Token': 'no-check',
+        },
+        body: form,
+    });
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`Confluence attachment upload ${filename} → ${res.status}: ${text}`);
+    }
+}
+export async function createSnapshotPage(spaceKey, docPageId, title, summaryMd, images, baseUrl, auth) {
+    const existing = await findPage(spaceKey, title, baseUrl, auth);
+    if (existing) {
+        return `${siteOrigin(baseUrl)}/wiki/spaces/${spaceKey}/pages/${existing.id}`;
+    }
+    const stripped = summaryMd
+        .replace(/\n\n---\n\n## Page renders[\s\S]*$/, '')
+        .replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/s, '');
+    let body = markdownToStorage(stripped);
+    const pageId = await createPage(spaceKey, docPageId, title, body, baseUrl, auth);
+    const uploadedFilenames = [];
+    for (const img of images) {
+        try {
+            await uploadAttachment(pageId, img.filename, img.data, baseUrl, auth);
+            uploadedFilenames.push(img.filename);
+        }
+        catch {
+            // Skip failed uploads — page still created, just missing that image
+        }
+    }
+    if (uploadedFilenames.length > 0) {
+        const imgSection = '<h2>Page Renders</h2>' +
+            uploadedFilenames
+                .map((f) => `<ac:image ac:width="800"><ri:attachment ri:filename="${escapeAttr(f)}"/></ac:image>`)
+                .join('');
+        body += imgSection;
+        await updatePage(pageId, title, body, 1, baseUrl, auth);
+    }
+    return `${siteOrigin(baseUrl)}/wiki/spaces/${spaceKey}/pages/${pageId}`;
 }
 // ---------------------------------------------------------------------------
 // Markdown → Confluence storage format (XHTML-like)
@@ -104,7 +151,7 @@ export function markdownToStorage(md) {
     const lines = md.split('\n');
     const out = [];
     let tablePhase = 'none';
-    let inList = false;
+    let listDepth = 0;
     let pendingPara = [];
     function flushPara() {
         if (pendingPara.length > 0) {
@@ -113,9 +160,9 @@ export function markdownToStorage(md) {
         }
     }
     function closeList() {
-        if (inList) {
+        while (listDepth > 0) {
             out.push('</ul>');
-            inList = false;
+            listDepth--;
         }
     }
     function closeTable() {
@@ -156,14 +203,20 @@ export function markdownToStorage(md) {
                 tablePhase = 'body';
             continue;
         }
-        if (/^[-*]\s/.test(line)) {
+        const bulletMatch = line.match(/^( *)[-*] (.*)/);
+        if (bulletMatch) {
             flushPara();
             closeTable();
-            if (!inList) {
+            const depth = bulletMatch[1].length >= 2 ? 2 : 1;
+            while (listDepth < depth) {
                 out.push('<ul>');
-                inList = true;
+                listDepth++;
             }
-            out.push(`<li>${inline(line.slice(2))}</li>`);
+            while (listDepth > depth) {
+                out.push('</ul>');
+                listDepth--;
+            }
+            out.push(`<li>${inline(bulletMatch[2])}</li>`);
             continue;
         }
         if (line.trim() === '') {

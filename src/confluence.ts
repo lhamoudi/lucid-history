@@ -91,13 +91,86 @@ export async function upsertPage(
   body: string,
   baseUrl: string,
   auth: Auth,
-): Promise<void> {
+): Promise<string> {
   const existing = await findPage(spaceKey, title, baseUrl, auth);
   if (existing) {
     await updatePage(existing.id, title, body, existing.version, baseUrl, auth);
+    return existing.id;
   } else {
-    await createPage(spaceKey, parentId, title, body, baseUrl, auth);
+    return await createPage(spaceKey, parentId, title, body, baseUrl, auth);
   }
+}
+
+export type SnapshotImage = { filename: string; data: Buffer };
+
+export async function uploadAttachment(
+  pageId: string,
+  filename: string,
+  data: Buffer,
+  baseUrl: string,
+  auth: Auth,
+): Promise<void> {
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(data)], { type: 'image/png' }), filename);
+  const res = await fetch(
+    `${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}/child/attachment`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader(auth),
+        'X-Atlassian-Token': 'no-check',
+      },
+      body: form,
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Confluence attachment upload ${filename} → ${res.status}: ${text}`);
+  }
+}
+
+export async function createSnapshotPage(
+  spaceKey: string,
+  docPageId: string,
+  title: string,
+  summaryMd: string,
+  images: SnapshotImage[],
+  baseUrl: string,
+  auth: Auth,
+): Promise<string> {
+  const existing = await findPage(spaceKey, title, baseUrl, auth);
+  if (existing) {
+    return `${siteOrigin(baseUrl)}/wiki/spaces/${spaceKey}/pages/${existing.id}`;
+  }
+
+  const stripped = summaryMd
+    .replace(/\n\n---\n\n## Page renders[\s\S]*$/, '')
+    .replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/s, '');
+  let body = markdownToStorage(stripped);
+
+  const pageId = await createPage(spaceKey, docPageId, title, body, baseUrl, auth);
+
+  const uploadedFilenames: string[] = [];
+  for (const img of images) {
+    try {
+      await uploadAttachment(pageId, img.filename, img.data, baseUrl, auth);
+      uploadedFilenames.push(img.filename);
+    } catch {
+      // Skip failed uploads — page still created, just missing that image
+    }
+  }
+
+  if (uploadedFilenames.length > 0) {
+    const imgSection =
+      '<h2>Page Renders</h2>' +
+      uploadedFilenames
+        .map((f) => `<ac:image ac:width="800"><ri:attachment ri:filename="${escapeAttr(f)}"/></ac:image>`)
+        .join('');
+    body += imgSection;
+    await updatePage(pageId, title, body, 1, baseUrl, auth);
+  }
+
+  return `${siteOrigin(baseUrl)}/wiki/spaces/${spaceKey}/pages/${pageId}`;
 }
 
 // ---------------------------------------------------------------------------
