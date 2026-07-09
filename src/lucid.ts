@@ -65,8 +65,11 @@ export async function copyDocument(
       body: JSON.stringify({ title, template: sourceId, parent: parentFolderId }),
     });
     if (!res.ok) throw apiError(`Lucid document copy failed ${res.status}: ${await res.text()}`, res.status);
-    const data = (await res.json()) as { id: string; editUrl?: string };
-    return { id: data.id, url: data.editUrl ?? `https://lucid.app/lucidchart/${data.id}/edit` };
+    const data = (await res.json()) as { id?: string; documentId?: string; editUrl?: string };
+    const url = data.editUrl ?? (data.id || data.documentId ? `https://lucid.app/lucidchart/${data.id ?? data.documentId}/edit` : undefined);
+    const id = data.id ?? data.documentId ?? url?.match(/\/lucidchart\/([0-9a-f-]{36})\//)?.[1];
+    if (!id) throw new Error(`copyDocument: could not determine document ID from response: ${JSON.stringify(data)}`);
+    return { id, url: url ?? `https://lucid.app/lucidchart/${id}/edit` };
   });
 }
 
