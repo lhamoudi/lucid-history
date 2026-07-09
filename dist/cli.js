@@ -139,7 +139,6 @@ program
     .option('--dry-run', 'Skip git push and PR creation', false)
     .option('--skip-renders', 'Skip PNG exports (useful while Lucid PNG endpoint is unverified)', false)
     .option('--lucid-folder <id>', 'Lucid folder ID to save snapshot copies into (e.g. __AUTOMATED_SNAPSHOTS)')
-    .option('--auto-merge', 'Automatically merge the PR after opening it', false)
     .option('--slack-webhook <url>', 'Slack incoming webhook URL — posts the summary when changes are detected')
     .option('--confluence-url <url>', 'Confluence base URL — create a per-snapshot child page here')
     .option('--confluence-email <email>', 'Atlassian account email')
@@ -270,11 +269,9 @@ program
             body: `Initial snapshot; no prior state to diff.${link}`,
         });
         console.log(`[${doc.title}] PR opened: ${url}`);
-        if (opts.autoMerge) {
-            console.log(`[${doc.title}] Merging PR and deleting branch...`);
-            await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
-            console.log(`[${doc.title}] Done.`);
-        }
+        console.log(`[${doc.title}] Merging PR and deleting branch...`);
+        await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
+        console.log(`[${doc.title}] Done.`);
         return;
     }
     const d = enrichLinesWithShapeText(diff(base, doc), doc);
@@ -351,11 +348,9 @@ program
         body: summary + absoluteImageSection,
     });
     console.log(`[${doc.title}] PR opened: ${url}`);
-    if (opts.autoMerge) {
-        console.log(`[${doc.title}] Merging PR and deleting branch...`);
-        await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
-        console.log(`[${doc.title}] Done.`);
-    }
+    console.log(`[${doc.title}] Merging PR and deleting branch...`);
+    await mergePullRequest({ owner, repo: name, pullNumber: number, branch });
+    console.log(`[${doc.title}] Done.`);
     let confluenceSnapshotUrl;
     const hasConfluence = opts.confluenceUrl &&
         opts.confluenceEmail &&
