@@ -1,6 +1,6 @@
 # lucid-history
 
-Track Lucidchart changes over time. Each day, take a structural JSON snapshot of one or more Lucidchart documents, commit it to a private GitHub repo, and open a PR whose body is an AI-generated summary of what changed since the last snapshot. A per-page history of rendered PNGs is maintained alongside, so reviewers can see each tab's visual evolution.
+Track Lucidchart changes over time. Each day, take a structural JSON snapshot of one or more Lucidchart documents, commit it to a private GitHub repo via an auto-merged PR whose body is an AI-generated summary of what changed since the last snapshot. A per-page history of rendered PNGs is maintained alongside, so you can see each tab's visual evolution.
 
 ## How it works
 
@@ -89,14 +89,11 @@ npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --dry-run
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --skip-renders
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --lucid-folder <folder-id>
-npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --auto-merge
 ```
 
 `--dry-run` fetches, diffs, and prints the AI summary without writing any files, pushing any commits, or creating a Lucid copy.
 
 `--skip-renders` bypasses PNG export for changed pages.
-
-`--auto-merge` squash-merges the PR immediately after opening it, then deletes the snapshot branch. Skipped in `--dry-run`. Requires the `GITHUB_TOKEN` to have write access to the snapshots repo.
 
 `--lucid-folder <id>` copies the live document into the given Lucid folder, titled `SNAPSHOT_<doc-title>_<YYYY-MM-DD> <HH:MM>`. A link is appended to both the snapshot `summary.md` and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
 
@@ -285,7 +282,7 @@ npm run build
 - [x] Git + PR flow via simple-git and @octokit/rest
 - [x] GitHub Actions workflow templates (`templates/workflows/`)
 - [x] Lucid snapshot copies via `--lucid-folder`
-- [x] Auto-merge + branch deletion via `--auto-merge`
+- [x] Auto-merge + branch deletion (always on)
 - [x] `HISTORY.md` per-doc snapshot log (date, page counts, affected pages, AI theme blurb)
 - [x] Weekly digest via `weekly-digest` — Slack, committed Markdown file, and/or Confluence
 - [x] Confluence page publishing via `confluence-update` (per-doc) + `weekly-digest` (per-week)
