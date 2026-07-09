@@ -1,6 +1,6 @@
 # lucid-history
 
-Track Lucidchart changes over time. Each day, take a structural JSON snapshot of one or more Lucidchart documents, commit it to a private GitHub repo via an auto-merged PR whose body is an AI-generated summary of what changed since the last snapshot. A per-page history of rendered PNGs is maintained alongside, so you can see each tab's visual evolution.
+Track Lucidchart changes over time. Each day, take a structural JSON snapshot of one or more Lucidchart documents, commit it to a private GitHub repo via an auto-merged PR whose body is an AI-generated summary of what changed since the last snapshot.
 
 ## How it works
 
@@ -9,9 +9,9 @@ Lucid REST API  →  fetch document JSON  →  normalize  →  semantic diff vs 
                                                               ↓
                                                          non-empty?
                                                               ↓
-           render PNGs for changed pages  ←  yes  ←  +  Anthropic summary
+                                          yes  ←  +  Anthropic summary
                                                               ↓
-                                    commit {JSON, PNGs, summary.md}
+                                         commit {JSON, summary.md}
                                                               ↓
                                                open PR on snapshots repo
                                                               ↓
@@ -87,17 +87,14 @@ Fetches both documents live and prints an AI-generated summary of structural dif
 ```bash
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --dry-run
-npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --skip-renders
 npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --lucid-folder <folder-id>
 ```
 
 `--dry-run` fetches, diffs, and prints the AI summary without writing any files, pushing any commits, or creating a Lucid copy.
 
-`--skip-renders` bypasses PNG export for changed pages.
-
 `--lucid-folder <id>` copies the live document into the given Lucid folder, titled `SNAPSHOT_<doc-title>_<YYYY-MM-DD> <HH:MM>`. A link is appended to both the snapshot `summary.md` and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
 
-No prior snapshot? The first run creates an "initial snapshot" commit (baseline PNGs only, no diff summary).
+No prior snapshot? The first run creates an "initial snapshot" commit (JSON baseline, no diff summary).
 No material changes since last snapshot? No commit, no PR — the command exits silently.
 
 ### `weekly-digest` — post a recap of the week's changes
@@ -160,7 +157,6 @@ snapshots/
     2026-04-22T10-30-00Z/
       snapshot.json                          full normalized document JSON
       summary.md                             the PR body, archived
-      <page-title>___<page-id>.png           one per changed page (only when changed)
 digests/
   2026-04-27.md                              weekly digest committed each Monday
 docs.json                                    list of tracked document IDs
@@ -278,7 +274,6 @@ npm run build
 - [x] Fetch + normalize + semantic diff
 - [x] AI summary via Anthropic
 - [x] CLI (`fetch`, `diff`, `compare`, `snapshot`, `weekly-digest`, `confluence-update`)
-- [x] PNG rendering with hash-dedupe
 - [x] Git + PR flow via simple-git and @octokit/rest
 - [x] GitHub Actions workflow templates (`templates/workflows/`)
 - [x] Lucid snapshot copies via `--lucid-folder`
@@ -287,7 +282,6 @@ npm run build
 - [x] Weekly digest via `weekly-digest` — Slack, committed Markdown file, and/or Confluence
 - [x] Confluence page publishing via `confluence-update` (per-doc) + `weekly-digest` (per-week)
 - [x] Exponential backoff retries on all Lucid API calls
-- [x] Lucid PNG export verified and working
 - [x] Slack bot (`/lucid compare`, `/lucid snapshot`, `/lucid digest`) via Vercel + GitHub Actions dispatch
 
 ## License
