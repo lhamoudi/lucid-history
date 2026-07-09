@@ -55,12 +55,30 @@ export async function openPullRequest(opts) {
 }
 export async function mergePullRequest(opts) {
     const octokit = new Octokit({ auth: opts.token ?? process.env.GITHUB_TOKEN });
-    await octokit.pulls.merge({
-        owner: opts.owner,
-        repo: opts.repo,
-        pull_number: opts.pullNumber,
-        merge_method: 'squash',
-    });
+    // GitHub returns 405 "Base branch was modified" when its backend hasn't fully
+    // propagated a recent merge to all replicas. Retry a few times before giving up.
+    const MAX_RETRIES = 4;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            await octokit.pulls.merge({
+                owner: opts.owner,
+                repo: opts.repo,
+                pull_number: opts.pullNumber,
+                merge_method: 'squash',
+            });
+            break;
+        }
+        catch (err) {
+            if (err.status === 405 && attempt < MAX_RETRIES) {
+                const delay = attempt * 3000;
+                console.log(`Merge attempt ${attempt} got 405 — retrying in ${delay / 1000}s...`);
+                await new Promise(r => setTimeout(r, delay));
+            }
+            else {
+                throw err;
+            }
+        }
+    }
     if (opts.branch) {
         await octokit.git.deleteRef({
             owner: opts.owner,
