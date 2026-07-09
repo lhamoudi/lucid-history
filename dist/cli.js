@@ -2,26 +2,16 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { writeFile, readFile, mkdir, rm, readdir } from 'node:fs/promises';
-import { join, dirname, relative, basename } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fetchDocument, copyDocument } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
 import { summarizeDiff } from './summarize.js';
-import { renderChangedPages, renderComparedPages, isDateOnlyChange } from './renders.js';
+import { renderComparedPages, isDateOnlyChange } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import { appendHistoryEntry } from './history.js';
 import { compileDigest, getWeekRange } from './digest.js';
 import { findPage, createPage, upsertPage, markdownToStorage, absolutifyLinks, createSnapshotPage } from './confluence.js';
-function buildImageSection(renders) {
-    if (renders.length === 0)
-        return '';
-    const sections = renders.map(({ pageTitle, beforeUrl, afterUrl }) => {
-        const before = beforeUrl ? `![${pageTitle} — before](${beforeUrl})` : '*(no prior render)*';
-        const after = `![${pageTitle} — after](${afterUrl})`;
-        return `### ${pageTitle}\n\n| Before | After |\n|:---:|:---:|\n| ${before} | ${after} |`;
-    });
-    return `\n\n---\n\n## Page renders\n\n${sections.join('\n\n')}`;
-}
 const program = new Command();
 program
     .name('lucid-history')
@@ -132,12 +122,11 @@ program
 });
 program
     .command('snapshot')
-    .description('Fetch, diff vs latest, write snapshot + PNGs, and open a PR on the snapshots repo')
+    .description('Fetch, diff vs latest, write snapshot, and open a PR on the snapshots repo')
     .argument('<doc-id>')
     .requiredOption('--repo <owner/name>', 'GitHub owner/name of the private snapshots repo')
     .option('--local <path>', 'Local clone path', '/tmp/lucid-history-snapshots')
     .option('--dry-run', 'Skip git push and PR creation', false)
-    .option('--skip-renders', 'Skip PNG exports (useful while Lucid PNG endpoint is unverified)', false)
     .option('--lucid-folder <id>', 'Lucid folder ID to save snapshot copies into (e.g. __AUTOMATED_SNAPSHOTS)')
     .option('--slack-webhook <url>', 'Slack incoming webhook URL — posts the summary when changes are detected')
     .option('--confluence-url <url>', 'Confluence base URL — create a per-snapshot child page here')
@@ -225,23 +214,6 @@ program
         console.log(`[${doc.title}] Initial snapshot — no prior state`);
         if (opts.dryRun)
             return;
-        let renders = [];
-        if (opts.skipRenders) {
-            console.log(`[${doc.title}] Skipping PNG renders`);
-        }
-        else {
-            const allPageIds = doc.pages.map((p) => p.id);
-            console.log(`[${doc.title}] Rendering ${allPageIds.length} page(s) as baseline...`);
-            renders = await renderChangedPages({
-                documentId: docId,
-                changedPageIds: allPageIds,
-                pageTitles: new Map(doc.pages.map((p) => [p.id, p.title])),
-                timestamp,
-                runDir: snapshotDir,
-                docDir,
-            });
-            console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
-        }
         const { link, url: lucidUrl, copyDocId, registryPath } = await takeLucidSnapshot();
         const summaryPath = join(snapshotDir, 'summary.md');
         const historyPath = join(docDir, 'HISTORY.md');
@@ -258,7 +230,7 @@ program
         });
         const branch = `snapshot/${docId}/${timestamp}`;
         console.log(`[${doc.title}] Committing to branch ${branch}...`);
-        await commitAndPushBranch(git, opts.local, branch, `chore: initial snapshot of ${doc.title}`, [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after), ...(registryPath ? [registryPath] : [])]);
+        await commitAndPushBranch(git, opts.local, branch, `chore: initial snapshot of ${doc.title}`, [jsonPath, latestPath, summaryPath, historyPath, ...(registryPath ? [registryPath] : [])]);
         console.log(`[${doc.title}] Opening PR...`);
         const { url, number } = await openPullRequest({
             owner,
@@ -292,33 +264,12 @@ program
         console.log(summary);
         return;
     }
-    let renders = [];
-    if (opts.skipRenders) {
-        console.log(`[${doc.title}] Skipping PNG renders`);
-    }
-    else {
-        console.log(`[${doc.title}] Rendering ${changedPages.length} page(s)...`);
-        renders = await renderChangedPages({
-            documentId: docId,
-            changedPageIds: changedPages,
-            pageTitles: new Map(doc.pages.map((p) => [p.id, p.title])),
-            timestamp,
-            runDir: snapshotDir,
-            docDir,
-        });
-        console.log(`[${doc.title}] Rendered ${renders.length} PNG(s)`);
-    }
     const { link, url: lucidUrl, copyDocId, registryPath } = await takeLucidSnapshot();
     summary += link;
     const summaryPath = join(snapshotDir, 'summary.md');
     const historyPath = join(docDir, 'HISTORY.md');
-    const relativeImageSection = buildImageSection(renders.map(({ pageTitle, before, after }) => ({
-        pageTitle,
-        beforeUrl: before ? relative(snapshotDir, before) : null,
-        afterUrl: relative(snapshotDir, after),
-    })));
     await mkdir(snapshotDir, { recursive: true });
-    await writeFile(summaryPath, summary + relativeImageSection);
+    await writeFile(summaryPath, summary);
     await appendHistoryEntry(docDir, {
         timestamp,
         summary,
@@ -330,14 +281,7 @@ program
     });
     const branch = `snapshot/${docId}/${timestamp}`;
     console.log(`[${doc.title}] Committing to branch ${branch}...`);
-    const sha = await commitAndPushBranch(git, opts.local, branch, `chore: snapshot ${doc.title} @ ${timestamp}`, [jsonPath, latestPath, summaryPath, historyPath, ...renders.map((r) => r.after), ...(registryPath ? [registryPath] : [])]);
-    // PR body uses absolute SHA-based URLs so images survive branch deletion.
-    const rawBase = `https://raw.githubusercontent.com/${owner}/${name}/${sha}`;
-    const absoluteImageSection = buildImageSection(renders.map(({ pageTitle, before, after }) => ({
-        pageTitle,
-        beforeUrl: before ? `${rawBase}/${relative(opts.local, before)}` : null,
-        afterUrl: `${rawBase}/${relative(opts.local, after)}`,
-    })));
+    await commitAndPushBranch(git, opts.local, branch, `chore: snapshot ${doc.title} @ ${timestamp}`, [jsonPath, latestPath, summaryPath, historyPath, ...(registryPath ? [registryPath] : [])]);
     console.log(`[${doc.title}] Opening PR...`);
     const { url, number } = await openPullRequest({
         owner,
@@ -345,7 +289,7 @@ program
         head: branch,
         base: 'main',
         title: `${doc.title}: ${changedPages.length} page(s) changed`,
-        body: summary + absoluteImageSection,
+        body: summary,
     });
     console.log(`[${doc.title}] PR opened: ${url}`);
     console.log(`[${doc.title}] Merging PR and deleting branch...`);
@@ -368,7 +312,7 @@ program
             else {
                 docPageId = await createPage(opts.confluenceSpace, opts.confluenceParent, doc.title, '<p>Auto-populated by lucid-history. Run <code>confluence-update</code> to populate full history.</p>', opts.confluenceUrl, cAuth);
             }
-            const images = await Promise.all(renders.map(async (r) => ({ filename: basename(r.after), data: await readFile(r.after) })));
+            const images = [];
             const snapshotPageTitle = `${doc.title} — ${timestampToLabel(timestamp)}`;
             confluenceSnapshotUrl = await createSnapshotPage(opts.confluenceSpace, docPageId, snapshotPageTitle, summary, images, opts.confluenceUrl, cAuth);
             console.log(`[${doc.title}] Confluence snapshot page: ${confluenceSnapshotUrl}`);
