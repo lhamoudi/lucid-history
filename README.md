@@ -103,19 +103,18 @@ No material changes since last snapshot? No commit, no PR — the command exits 
 # Slack only
 npx lucid-history weekly-digest --repo your-org/your-snapshots-repo --slack-webhook <url>
 
-# Write Markdown file only
-npx lucid-history weekly-digest --repo your-org/your-snapshots-repo --out digests/2026-04-27.md
+# Write per-doc digest files to <doc>/digests/<YYYY-MM-DD>.md
+npx lucid-history weekly-digest --repo your-org/your-snapshots-repo --write-digests
 
 # Slack + Confluence + file (all optional, any combination)
 npx lucid-history weekly-digest \
   --repo your-org/your-snapshots-repo \
   --slack-webhook <url> \
-  --out digests/2026-04-27.md \
+  --write-digests \
   --confluence-url https://your-org.atlassian.net \
   --confluence-email you@example.com \
   --confluence-token <atlassian-api-token> \
-  --confluence-space MYSPACE \
-  --confluence-parent <parent-page-id>
+  --confluence-space MYSPACE
 
 # Dry run (prints Markdown digest, no output)
 npx lucid-history weekly-digest --repo your-org/your-snapshots-repo --dry-run
@@ -125,7 +124,7 @@ Reads each doc's `HISTORY.md` from the local snapshots checkout, filters to the 
 
 `--week <YYYY-MM-DD>` targets the week containing the given date (default: current week). When run via GitHub Actions on Monday morning, the workflow passes last week's date automatically.
 
-`--out <file>` writes a Markdown digest file (committed to the snapshots repo by the workflow as `digests/<monday>.md`).
+`--write-digests` writes per-doc Markdown files (committed to the snapshots repo as `<doc>/digests/<monday>.md`).
 
 When Confluence flags are provided, each week's digest is published as a separate Confluence page (one per week, titled by the week label) under the specified parent.
 
@@ -150,15 +149,15 @@ Scans every doc folder under `snapshots/` in the local checkout, reads each doc'
 The tool writes to the snapshots repo with this structure:
 
 ```
-snapshots/
-  <doc-title>___<doc-id>/
+<doc-title>___<doc-id>/
+  snapshots/
     latest.json                              copy of most recent snapshot
     HISTORY.md                               chronological table of all snapshots
     2026-04-22T10-30-00Z/
       snapshot.json                          full normalized document JSON
       summary.md                             the PR body, archived
-digests/
-  2026-04-27.md                              weekly digest committed each Monday
+  digests/
+    2026-04-27.md                            per-doc weekly digest for that Monday's week
 docs.json                                    list of tracked document IDs
 ```
 
