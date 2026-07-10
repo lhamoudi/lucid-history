@@ -101,6 +101,43 @@ export async function upsertPage(
   }
 }
 
+export async function findChildPage(
+  parentId: string,
+  title: string,
+  baseUrl: string,
+  auth: Auth,
+): Promise<PageMeta | null> {
+  let start = 0;
+  while (true) {
+    const url =
+      `${siteOrigin(baseUrl)}/wiki/rest/api/content/${parentId}/child/page` +
+      `?expand=version&limit=50&start=${start}`;
+    const data = (await apiRequest('GET', url, auth)) as {
+      results: Array<{ id: string; title: string; version: { number: number } }>;
+    };
+    const match = data.results.find((p) => p.title === title);
+    if (match) return { id: match.id, version: match.version.number };
+    if (data.results.length < 50) return null;
+    start += 50;
+  }
+}
+
+export async function upsertChildPage(
+  spaceKey: string,
+  parentId: string,
+  title: string,
+  body: string,
+  baseUrl: string,
+  auth: Auth,
+): Promise<string> {
+  const existing = await findChildPage(parentId, title, baseUrl, auth);
+  if (existing) {
+    await updatePage(existing.id, title, body, existing.version, baseUrl, auth);
+    return existing.id;
+  }
+  return createPage(spaceKey, parentId, title, body, baseUrl, auth);
+}
+
 export type SnapshotImage = { filename: string; data: Buffer };
 
 export async function uploadAttachment(

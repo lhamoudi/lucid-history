@@ -64,6 +64,28 @@ export async function upsertPage(spaceKey, parentId, title, body, baseUrl, auth)
         return await createPage(spaceKey, parentId, title, body, baseUrl, auth);
     }
 }
+export async function findChildPage(parentId, title, baseUrl, auth) {
+    let start = 0;
+    while (true) {
+        const url = `${siteOrigin(baseUrl)}/wiki/rest/api/content/${parentId}/child/page` +
+            `?expand=version&limit=50&start=${start}`;
+        const data = (await apiRequest('GET', url, auth));
+        const match = data.results.find((p) => p.title === title);
+        if (match)
+            return { id: match.id, version: match.version.number };
+        if (data.results.length < 50)
+            return null;
+        start += 50;
+    }
+}
+export async function upsertChildPage(spaceKey, parentId, title, body, baseUrl, auth) {
+    const existing = await findChildPage(parentId, title, baseUrl, auth);
+    if (existing) {
+        await updatePage(existing.id, title, body, existing.version, baseUrl, auth);
+        return existing.id;
+    }
+    return createPage(spaceKey, parentId, title, body, baseUrl, auth);
+}
 export async function uploadAttachment(pageId, filename, data, baseUrl, auth) {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(data)], { type: 'image/png' }), filename);

@@ -11,7 +11,7 @@ import { renderComparedPages, isDateOnlyChange } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import { appendHistoryEntry } from './history.js';
 import { compileDigest, getWeekRange, type DocDigest } from './digest.js';
-import { findPage, createPage, upsertPage, markdownToStorage, absolutifyLinks, createSnapshotPage, type SnapshotImage } from './confluence.js';
+import { findPage, createPage, upsertPage, upsertChildPage, markdownToStorage, absolutifyLinks, createSnapshotPage, type SnapshotImage } from './confluence.js';
 import type { LucidDocument } from './types.js';
 
 
@@ -505,6 +505,19 @@ function formatMarkdownDigest(digests: DocDigest[], opts: DigestFormatOpts): str
   return `# ${digestWeekLabel(opts.start)} — Lucidchart Diagram Digest\n\n${sections.join('\n\n')}`;
 }
 
+function formatMarkdownDocDigest(doc: DocDigest, opts: DigestFormatOpts): string {
+  const bullets = doc.rows.map(row => {
+    const d = new Date(row.isoDate + 'T00:00:00Z');
+    const time = row.timestamp.slice(11, 16);
+    const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
+    const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
+    const pages = row.affectedPages || '—';
+    const url = digestRowUrl(doc, row, opts.owner, opts.repo);
+    return `- **${dateLine}** — ${counts} · ${pages}\n  ${row.theme} [Summary](${url})`;
+  });
+  return `# ${digestWeekLabel(opts.start)}\n\n${bullets.join('\n')}`;
+}
+
 function buildSlackDigestPayloads(digests: DocDigest[], opts: DigestFormatOpts): object[] {
   const weekLabel = digestWeekLabel(opts.start);
   return digests
@@ -567,7 +580,6 @@ program
   .option('--confluence-email <email>', 'Atlassian account email')
   .option('--confluence-token <token>', 'Atlassian API token')
   .option('--confluence-space <key>', 'Confluence space key')
-  .option('--confluence-parent <id>', 'Page ID of the Confluence parent page for digest pages')
   .action(
     async (opts: {
       repo: string;
@@ -580,14 +592,12 @@ program
       confluenceEmail?: string;
       confluenceToken?: string;
       confluenceSpace?: string;
-      confluenceParent?: string;
     }) => {
       const hasConfluence =
         opts.confluenceUrl &&
         opts.confluenceEmail &&
         opts.confluenceToken &&
-        opts.confluenceSpace &&
-        opts.confluenceParent;
+        opts.confluenceSpace;
 
       if (!opts.dryRun && !opts.slackWebhook && !opts.out && !hasConfluence) {
         console.error(
@@ -635,18 +645,32 @@ program
 
       if (hasConfluence) {
         const auth = { email: opts.confluenceEmail!, token: opts.confluenceToken! };
-        const pageTitle = digestWeekLabel(start);
-        const pageBody = markdownToStorage(formatMarkdownDigest(digests, fmtOpts));
-        console.log(`Publishing digest to Confluence: "${pageTitle}"...`);
-        await upsertPage(
-          opts.confluenceSpace!,
-          opts.confluenceParent!,
-          pageTitle,
-          pageBody,
-          opts.confluenceUrl!,
-          auth,
-        );
-        console.log('Weekly digest published to Confluence.');
+        const weekLabel = digestWeekLabel(start);
+        const docsWithChanges = digests.filter(doc => doc.rows.length > 0);
+        for (const doc of docsWithChanges) {
+          try {
+            const docPage = await findPage(opts.confluenceSpace!, doc.title, opts.confluenceUrl!, auth);
+            if (!docPage) {
+              console.warn(`[weekly-digest] No Confluence page for "${doc.title}" — skipping`);
+              continue;
+            }
+            // Confluence requires space-wide unique titles, so prefix both the
+            // container and week page titles with the doc name.
+            const folderTitle = `${doc.title} — Weekly Digests`;
+            const weekPageTitle = `${doc.title} — ${weekLabel}`;
+            const folderId = await upsertPage(
+              opts.confluenceSpace!, docPage.id,
+              folderTitle,
+              '<p>Per-week change summaries for this diagram.</p>',
+              opts.confluenceUrl!, auth,
+            );
+            const pageBody = markdownToStorage(formatMarkdownDocDigest(doc, fmtOpts));
+            await upsertPage(opts.confluenceSpace!, folderId, weekPageTitle, pageBody, opts.confluenceUrl!, auth);
+            console.log(`[weekly-digest] Confluence: ${doc.title} → ${weekLabel}`);
+          } catch (err) {
+            console.warn(`[weekly-digest] Confluence failed for "${doc.title}": ${(err as Error).message}`);
+          }
+        }
       }
     },
   );

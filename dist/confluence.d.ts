@@ -10,6 +10,8 @@ export declare function findPage(spaceKey: string, title: string, baseUrl: strin
 export declare function createPage(spaceKey: string, parentId: string, title: string, body: string, baseUrl: string, auth: Auth): Promise<string>;
 export declare function updatePage(pageId: string, title: string, body: string, version: number, baseUrl: string, auth: Auth): Promise<void>;
 export declare function upsertPage(spaceKey: string, parentId: string, title: string, body: string, baseUrl: string, auth: Auth): Promise<string>;
+export declare function findChildPage(parentId: string, title: string, baseUrl: string, auth: Auth): Promise<PageMeta | null>;
+export declare function upsertChildPage(spaceKey: string, parentId: string, title: string, body: string, baseUrl: string, auth: Auth): Promise<string>;
 export type SnapshotImage = {
     filename: string;
     data: Buffer;
