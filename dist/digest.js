@@ -35,19 +35,18 @@ export function getWeekRange(ref) {
 }
 export async function compileDigest(local, ref) {
     const docs = JSON.parse(await readFile(join(local, 'docs.json'), 'utf8'));
-    const snapshotsRoot = join(local, 'snapshots');
     const { start, end } = getWeekRange(ref);
+    const allEntries = await readdir(local, { withFileTypes: true }).catch(() => []);
     const result = [];
     for (const doc of docs) {
-        const entries = await readdir(snapshotsRoot, { withFileTypes: true }).catch(() => []);
-        const docFolderName = entries.find(e => e.isDirectory() && e.name.endsWith(`___${doc.id}`))?.name;
+        const docFolderName = allEntries.find(e => e.isDirectory() && e.name.endsWith(`___${doc.id}`))?.name;
         if (!docFolderName) {
             result.push({ title: doc.title, docFolder: '', rows: [] });
             continue;
         }
         let historyMd;
         try {
-            historyMd = await readFile(join(snapshotsRoot, docFolderName, 'HISTORY.md'), 'utf8');
+            historyMd = await readFile(join(local, docFolderName, 'snapshots', 'HISTORY.md'), 'utf8');
         }
         catch {
             result.push({ title: doc.title, docFolder: docFolderName, rows: [] });

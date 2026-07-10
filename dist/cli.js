@@ -143,12 +143,12 @@ program
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5) + 'Z';
     console.log(`[${doc.title}] Fetched — ${doc.pages.length} page(s)`);
     const safeTitle = doc.title.replace(/[^a-zA-Z0-9_-]/g, '_');
-    // Locate the doc folder by stable ID so renames don't orphan history.
-    const snapshotsRoot = join(opts.local, 'snapshots');
-    const existingDocFolder = await readdir(snapshotsRoot, { withFileTypes: true })
+    // Locate the doc root folder by stable ID so renames don't orphan history.
+    const existingDocFolder = await readdir(opts.local, { withFileTypes: true })
         .then(entries => entries.find(d => d.isDirectory() && d.name.endsWith(`___${docId}`))?.name)
         .catch(() => undefined);
-    const docDir = join(snapshotsRoot, existingDocFolder ?? `${safeTitle}___${docId}`);
+    const docRootDir = join(opts.local, existingDocFolder ?? `${safeTitle}___${docId}`);
+    const docDir = join(docRootDir, 'snapshots');
     const snapshotDir = join(docDir, timestamp);
     const jsonPath = join(snapshotDir, 'snapshot.json');
     const latestPath = join(docDir, 'latest.json');
@@ -322,7 +322,7 @@ program
         }
     }
     if (opts.slackWebhook) {
-        const summaryGhUrl = `https://github.com/${owner}/${name}/blob/main/snapshots/${relative(join(opts.local, 'snapshots'), snapshotDir)}/summary.md`;
+        const summaryGhUrl = `https://github.com/${owner}/${name}/blob/main/${relative(opts.local, snapshotDir)}/summary.md`;
         const summaryUrl = confluenceSnapshotUrl ?? summaryGhUrl;
         const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
         const SLACK_MAX = 2900;
@@ -495,7 +495,7 @@ program
     .requiredOption('--repo <owner/name>', 'GitHub snapshots repo slug (for summary links)')
     .option('--local <path>', 'Local snapshots repo path', '.')
     .option('--slack-webhook <url>', 'Slack incoming webhook URL')
-    .option('--out <file>', 'Write the digest as a Markdown file (committed to the snapshots repo by the workflow)')
+    .option('--write-digests', 'Write per-doc digest files to <local>/<doc-folder>/digests/<YYYY-MM-DD>.md')
     .option('--week <YYYY-MM-DD>', 'Any date in the week to digest (default: today)')
     .option('--dry-run', 'Print the digest without posting or writing', false)
     .option('--confluence-url <url>', 'Confluence base URL, e.g. https://your-org.atlassian.net')
@@ -507,8 +507,8 @@ program
         opts.confluenceEmail &&
         opts.confluenceToken &&
         opts.confluenceSpace;
-    if (!opts.dryRun && !opts.slackWebhook && !opts.out && !hasConfluence) {
-        console.error('At least one of --slack-webhook, --out, or --confluence-* flags is required unless --dry-run is set');
+    if (!opts.dryRun && !opts.slackWebhook && !opts.writeDigests && !hasConfluence) {
+        console.error('At least one of --slack-webhook, --write-digests, or --confluence-* flags is required unless --dry-run is set');
         process.exit(1);
     }
     const ref = opts.week ? new Date(opts.week + 'T12:00:00Z') : new Date();
@@ -525,10 +525,14 @@ program
         console.log(formatMarkdownDigest(digests, fmtOpts));
         return;
     }
-    if (opts.out) {
-        await mkdir(dirname(opts.out), { recursive: true });
-        await writeFile(opts.out, formatMarkdownDigest(digests, fmtOpts));
-        console.log(`Wrote digest to ${opts.out}`);
+    if (opts.writeDigests) {
+        const monday = `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}-${String(start.getUTCDate()).padStart(2, '0')}`;
+        for (const doc of digests.filter(d => d.rows.length > 0 && d.docFolder)) {
+            const outPath = join(opts.local, doc.docFolder, 'digests', `${monday}.md`);
+            await mkdir(dirname(outPath), { recursive: true });
+            await writeFile(outPath, formatMarkdownDocDigest(doc, fmtOpts));
+            console.log(`Wrote ${outPath}`);
+        }
     }
     if (opts.slackWebhook) {
         const payloads = buildSlackDigestPayloads(digests, fmtOpts);
@@ -582,19 +586,19 @@ program
     .action(async (opts) => {
     const auth = { email: opts.confluenceEmail, token: opts.confluenceToken };
     const [owner, repoName] = opts.repo.split('/');
-    const snapshotsRoot = join(opts.local, 'snapshots');
+    const UUID_SUFFIX_RE = /___[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let docFolders;
     try {
-        docFolders = (await readdir(snapshotsRoot, { withFileTypes: true }))
-            .filter((e) => e.isDirectory())
+        docFolders = (await readdir(opts.local, { withFileTypes: true }))
+            .filter((e) => e.isDirectory() && UUID_SUFFIX_RE.test(e.name))
             .map((e) => e.name);
     }
     catch {
-        console.error(`No snapshots directory found at ${snapshotsRoot}`);
+        console.error(`Cannot read repo directory at ${opts.local}`);
         process.exit(1);
     }
     for (const folderName of docFolders) {
-        const docDir = join(snapshotsRoot, folderName);
+        const docDir = join(opts.local, folderName, 'snapshots');
         let docTitle;
         try {
             const latest = JSON.parse(await readFile(join(docDir, 'latest.json'), 'utf8'));
@@ -604,7 +608,7 @@ program
             console.warn(`[${folderName}] No latest.json — skipping`);
             continue;
         }
-        const ghBase = `https://github.com/${owner}/${repoName}/blob/main/snapshots/${folderName}`;
+        const ghBase = `https://github.com/${owner}/${repoName}/blob/main/${folderName}/snapshots`;
         let historyMd = '';
         try {
             const raw = await readFile(join(docDir, 'HISTORY.md'), 'utf8');
@@ -659,19 +663,12 @@ program
                 continue;
             let summaryMd = '';
             try {
-                summaryMd = await readFile(join(docDir, folderTs, 'summary.md'), 'utf8');
+                summaryMd = await readFile(join(opts.local, folderName, 'snapshots', folderTs, 'summary.md'), 'utf8');
             }
             catch {
                 continue;
             }
-            const pngFiles = await readdir(join(docDir, folderTs)).catch(() => []);
             const images = [];
-            for (const f of pngFiles.filter((f) => f.endsWith('.png'))) {
-                try {
-                    images.push({ filename: f, data: await readFile(join(docDir, folderTs, f)) });
-                }
-                catch { /* skip */ }
-            }
             try {
                 await createSnapshotPage(opts.confluenceSpace, docPageId, snapshotPageTitle, summaryMd, images, opts.confluenceUrl, auth);
                 console.log(`[${docTitle}] Created snapshot page: ${snapshotPageTitle}`);
