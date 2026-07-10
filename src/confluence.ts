@@ -138,6 +138,42 @@ export async function upsertChildPage(
   return createPage(spaceKey, parentId, title, body, baseUrl, auth);
 }
 
+export async function getPageParentId(
+  pageId: string,
+  baseUrl: string,
+  auth: Auth,
+): Promise<string | null> {
+  const data = (await apiRequest(
+    'GET',
+    `${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}?expand=ancestors`,
+    auth,
+  )) as { ancestors?: Array<{ id: string }> };
+  const ancestors = data.ancestors ?? [];
+  return ancestors.length > 0 ? ancestors[ancestors.length - 1].id : null;
+}
+
+export async function movePage(
+  pageId: string,
+  newParentId: string,
+  spaceKey: string,
+  baseUrl: string,
+  auth: Auth,
+): Promise<void> {
+  const page = (await apiRequest(
+    'GET',
+    `${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}?expand=body.storage,version`,
+    auth,
+  )) as { title: string; version: { number: number }; body: { storage: { value: string } } };
+  await apiRequest('PUT', `${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}`, auth, {
+    type: 'page',
+    title: page.title,
+    version: { number: page.version.number + 1 },
+    space: { key: spaceKey },
+    ancestors: [{ id: newParentId }],
+    body: { storage: { value: page.body.storage.value, representation: 'storage' } },
+  });
+}
+
 export type SnapshotImage = { filename: string; data: Buffer };
 
 export async function uploadAttachment(

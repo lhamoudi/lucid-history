@@ -11,7 +11,7 @@ import { renderComparedPages, isDateOnlyChange } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import { appendHistoryEntry } from './history.js';
 import { compileDigest, getWeekRange, type DocDigest } from './digest.js';
-import { findPage, createPage, upsertPage, upsertChildPage, markdownToStorage, absolutifyLinks, createSnapshotPage, type SnapshotImage } from './confluence.js';
+import { findPage, createPage, upsertPage, upsertChildPage, getPageParentId, movePage, markdownToStorage, absolutifyLinks, createSnapshotPage, type SnapshotImage } from './confluence.js';
 import type { LucidDocument } from './types.js';
 
 
@@ -373,8 +373,17 @@ program
           }
           const images: SnapshotImage[] = [];
           const snapshotPageTitle = `${doc.title} — ${timestampToLabel(timestamp)}`;
+          const snapshotsContainerTitle = `${doc.title} — Snapshots`;
+          const snapshotsContainerId = await upsertChildPage(
+            opts.confluenceSpace!,
+            docPageId,
+            snapshotsContainerTitle,
+            '<p>Individual snapshot pages. Managed by lucid-history.</p>',
+            opts.confluenceUrl!,
+            cAuth,
+          );
           confluenceSnapshotUrl = await createSnapshotPage(
-            opts.confluenceSpace!, docPageId, snapshotPageTitle, summary, images, opts.confluenceUrl!, cAuth,
+            opts.confluenceSpace!, snapshotsContainerId, snapshotPageTitle, summary, images, opts.confluenceUrl!, cAuth,
           );
           console.log(`[${doc.title}] Confluence snapshot page: ${confluenceSnapshotUrl}`);
         } catch (err) {
@@ -481,7 +490,7 @@ function digestWeekLabel(start: Date): string {
 }
 
 function digestRowUrl(doc: DocDigest, row: { folderTimestamp: string }, owner: string, repo: string): string {
-  return `https://github.com/${owner}/${repo}/blob/main/snapshots/${doc.docFolder}/${row.folderTimestamp}/summary.md`;
+  return `https://github.com/${owner}/${repo}/blob/main/${doc.docFolder}/snapshots/${row.folderTimestamp}/summary.md`;
 }
 
 function formatMarkdownDigest(digests: DocDigest[], opts: DigestFormatOpts): string {
@@ -780,7 +789,19 @@ program
         );
         console.log(`[${docTitle}] Doc page done.`);
 
-        // Create per-snapshot child pages for any timestamp dirs not yet in Confluence.
+        // Find or create the "Snapshots" container under the doc page.
+        const snapshotsContainerTitle = `${docTitle} — Snapshots`;
+        const snapshotsContainerId = await upsertChildPage(
+          opts.confluenceSpace,
+          docPageId,
+          snapshotsContainerTitle,
+          '<p>Individual snapshot pages. Managed by lucid-history.</p>',
+          opts.confluenceUrl,
+          auth,
+        );
+        console.log(`[${docTitle}] Snapshots container ready.`);
+
+        // Create per-snapshot child pages; migrate any that were placed directly under the doc page.
         const allTimeDirs = (await readdir(docDir, { withFileTypes: true }))
           .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
           .map((e) => e.name)
@@ -789,7 +810,20 @@ program
         for (const folderTs of allTimeDirs) {
           const snapshotPageTitle = `${docTitle} — ${timestampToLabel(folderTs)}`;
           const existing = await findPage(opts.confluenceSpace, snapshotPageTitle, opts.confluenceUrl, auth);
-          if (existing) continue;
+
+          if (existing) {
+            // Move to Snapshots container if currently a direct child of the doc page.
+            const parentId = await getPageParentId(existing.id, opts.confluenceUrl, auth);
+            if (parentId !== snapshotsContainerId) {
+              try {
+                await movePage(existing.id, snapshotsContainerId, opts.confluenceSpace, opts.confluenceUrl, auth);
+                console.log(`[${docTitle}] Moved to Snapshots folder: ${snapshotPageTitle}`);
+              } catch (err) {
+                console.warn(`[${docTitle}] Move failed for ${folderTs}: ${(err as Error).message}`);
+              }
+            }
+            continue;
+          }
 
           let summaryMd = '';
           try {
@@ -798,11 +832,9 @@ program
             continue;
           }
 
-          const images: SnapshotImage[] = [];
-
           try {
             await createSnapshotPage(
-              opts.confluenceSpace, docPageId, snapshotPageTitle, summaryMd, images, opts.confluenceUrl, auth,
+              opts.confluenceSpace, snapshotsContainerId, snapshotPageTitle, summaryMd, [], opts.confluenceUrl, auth,
             );
             console.log(`[${docTitle}] Created snapshot page: ${snapshotPageTitle}`);
           } catch (err) {
