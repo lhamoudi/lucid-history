@@ -2,11 +2,14 @@ import type { LucidDocument } from './types.js';
 
 const LUCID_API_BASE = 'https://api.lucid.co';
 
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+// 408 is Lucid's "internalRequestTimeout" — transient, always safe to retry.
+const RETRYABLE_4XX = new Set([408, 429]);
+
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
-      const delayMs = 1000 * 2 ** (attempt - 1); // 1s, 2s, 4s
+      const delayMs = 1000 * 2 ** (attempt - 1); // 1s, 2s, 4s, 8s
       console.warn(`[lucid] Retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${maxAttempts})...`);
       await new Promise(r => setTimeout(r, delayMs));
     }
@@ -15,8 +18,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
     } catch (err) {
       lastError = err;
       const status = (err as { status?: number }).status;
-      // Only retry on 5xx / network errors; propagate 4xx immediately
-      if (typeof status === 'number' && status < 500) throw err;
+      if (typeof status === 'number' && status < 500 && !RETRYABLE_4XX.has(status)) throw err;
     }
   }
   throw lastError;
