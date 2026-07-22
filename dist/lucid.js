@@ -1,21 +1,23 @@
 const LUCID_API_BASE = 'https://api.lucid.co';
-async function withRetry(fn, maxAttempts = 4) {
+// 408 is Lucid's "internalRequestTimeout" — transient, always safe to retry.
+const RETRYABLE_4XX = new Set([408, 429]);
+async function withRetry(fn, maxAttempts = 5) {
     let lastError;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        if (attempt > 0) {
-            const delayMs = 1000 * 2 ** (attempt - 1); // 1s, 2s, 4s
-            console.warn(`[lucid] Retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${maxAttempts})...`);
-            await new Promise(r => setTimeout(r, delayMs));
-        }
         try {
             return await fn();
         }
         catch (err) {
             lastError = err;
             const status = err.status;
-            // Only retry on 5xx / network errors; propagate 4xx immediately
-            if (typeof status === 'number' && status < 500)
+            const msg = err.message ?? String(err);
+            if (typeof status === 'number' && status < 500 && !RETRYABLE_4XX.has(status))
                 throw err;
+            if (attempt + 1 < maxAttempts) {
+                const delayMs = 1000 * 2 ** attempt;
+                console.warn(`[lucid] ${status ? `HTTP ${status}` : 'Error'} — retrying in ${delayMs / 1000}s (attempt ${attempt + 2}/${maxAttempts}): ${msg}`);
+                await new Promise(r => setTimeout(r, delayMs));
+            }
         }
     }
     throw lastError;
@@ -27,7 +29,12 @@ function authHeaders(apiKey) {
     };
 }
 function apiError(message, status) {
-    return Object.assign(new Error(message), { status });
+    let hint = '';
+    if (status === 403)
+        hint = ' — LUCID_API_KEY may be expired or lack access to this document; check Account Settings → Developer → API tokens in Lucid';
+    if (status === 401)
+        hint = ' — LUCID_API_KEY is invalid or has been revoked; regenerate it in Lucid Account Settings → Developer';
+    return Object.assign(new Error(message + hint), { status });
 }
 export async function createFolder(name, parentId, apiKey = process.env.LUCID_API_KEY) {
     if (!apiKey)

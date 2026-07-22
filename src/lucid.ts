@@ -8,17 +8,18 @@ const RETRYABLE_4XX = new Set([408, 429]);
 async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (attempt > 0) {
-      const delayMs = 1000 * 2 ** (attempt - 1); // 1s, 2s, 4s, 8s
-      console.warn(`[lucid] Retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${maxAttempts})...`);
-      await new Promise(r => setTimeout(r, delayMs));
-    }
     try {
       return await fn();
     } catch (err) {
       lastError = err;
       const status = (err as { status?: number }).status;
+      const msg = (err as Error).message ?? String(err);
       if (typeof status === 'number' && status < 500 && !RETRYABLE_4XX.has(status)) throw err;
+      if (attempt + 1 < maxAttempts) {
+        const delayMs = 1000 * 2 ** attempt;
+        console.warn(`[lucid] ${status ? `HTTP ${status}` : 'Error'} — retrying in ${delayMs / 1000}s (attempt ${attempt + 2}/${maxAttempts}): ${msg}`);
+        await new Promise(r => setTimeout(r, delayMs));
+      }
     }
   }
   throw lastError;
@@ -32,7 +33,10 @@ function authHeaders(apiKey: string): Record<string, string> {
 }
 
 function apiError(message: string, status: number): Error {
-  return Object.assign(new Error(message), { status });
+  let hint = '';
+  if (status === 403) hint = ' — LUCID_API_KEY may be expired or lack access to this document; check Account Settings → Developer → API tokens in Lucid';
+  if (status === 401) hint = ' — LUCID_API_KEY is invalid or has been revoked; regenerate it in Lucid Account Settings → Developer';
+  return Object.assign(new Error(message + hint), { status });
 }
 
 export async function createFolder(
