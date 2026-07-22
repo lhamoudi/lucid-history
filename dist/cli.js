@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { Command } from 'commander';
 import { writeFile, readFile, mkdir, rm, readdir } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
-import { fetchDocument, copyDocument } from './lucid.js';
+import { fetchDocument, copyDocument, findOrCreateSubfolder } from './lucid.js';
 import { normalize } from './normalize.js';
 import { diff, isEmpty, changedPageIds, enrichLinesWithShapeText } from './diff.js';
 import { summarizeDiff } from './summarize.js';
@@ -168,11 +168,12 @@ program
     async function takeLucidSnapshot() {
         if (!opts.lucidFolder)
             return { link: '', url: '', copyDocId: undefined };
-        const folderId = parseInt(opts.lucidFolder, 10);
-        console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS...`);
+        const rootFolderId = parseInt(opts.lucidFolder, 10);
+        console.log(`[${doc.title}] Copying document to Lucid __AUTOMATED_SNAPSHOTS/${doc.title}...`);
         const snapshotTitle = `SNAPSHOT_${doc.title}_${timestamp.slice(0, 10)} ${timestamp.slice(11, 13)}:${timestamp.slice(14, 16)}`;
         try {
-            const copied = await copyDocument(docId, snapshotTitle, folderId);
+            const docFolderId = await findOrCreateSubfolder(doc.title, rootFolderId);
+            const copied = await copyDocument(docId, snapshotTitle, docFolderId);
             console.log(`[${doc.title}] Lucid copy saved: ${copied.url}`);
             // Build page ID map so cross-document compare can match pages correctly.
             let registryPath;

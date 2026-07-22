@@ -54,6 +54,27 @@ export async function createFolder(name, parentId, apiKey = process.env.LUCID_AP
         return data.id;
     });
 }
+export async function listFolderContents(folderId, apiKey = process.env.LUCID_API_KEY) {
+    if (!apiKey)
+        throw new Error('LUCID_API_KEY is not set');
+    return withRetry(async () => {
+        const res = await fetch(`${LUCID_API_BASE}/folders/${folderId}/contents`, {
+            headers: authHeaders(apiKey),
+        });
+        if (!res.ok)
+            throw apiError(`Lucid folder contents fetch failed ${res.status}: ${await res.text()}`, res.status);
+        return await res.json();
+    });
+}
+// Reuses a same-named subfolder if one already exists, so repeated runs don't
+// pile up duplicate "<doc-title>" folders under the automated-snapshots root.
+export async function findOrCreateSubfolder(name, parentId, apiKey = process.env.LUCID_API_KEY) {
+    const contents = await listFolderContents(parentId, apiKey);
+    const existing = contents.find((item) => item.type === 'folder' && item.name === name);
+    if (existing)
+        return existing.id;
+    return createFolder(name, parentId, apiKey);
+}
 export async function copyDocument(sourceId, title, parentFolderId, apiKey = process.env.LUCID_API_KEY) {
     if (!apiKey)
         throw new Error('LUCID_API_KEY is not set');

@@ -1,5 +1,11 @@
 import type { LucidDocument } from './types.js';
 export declare function createFolder(name: string, parentId: number, apiKey?: string | undefined): Promise<number>;
+export declare function listFolderContents(folderId: number, apiKey?: string | undefined): Promise<Array<{
+    id: number | string;
+    type: 'folder' | 'document';
+    name: string;
+}>>;
+export declare function findOrCreateSubfolder(name: string, parentId: number, apiKey?: string | undefined): Promise<number>;
 export declare function copyDocument(sourceId: string, title: string, parentFolderId: number, apiKey?: string | undefined): Promise<{
     id: string;
     url: string;
