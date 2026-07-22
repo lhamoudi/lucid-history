@@ -5,7 +5,7 @@ const LUCID_API_BASE = 'https://api.lucid.co';
 // 408/429 are retryable 4xx; all 5xx are retried implicitly.
 const RETRYABLE_4XX = new Set([408, 429]);
 
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 5): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 7): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
