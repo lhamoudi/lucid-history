@@ -92,7 +92,7 @@ npx lucid-history snapshot <doc-id> --repo your-org/your-snapshots-repo --lucid-
 
 `--dry-run` fetches, diffs, and prints the AI summary without writing any files, pushing any commits, or creating a Lucid copy.
 
-`--lucid-folder <id>` copies the live document into the given Lucid folder, titled `SNAPSHOT_<doc-title>_<YYYY-MM-DD> <HH:MM>`. A link is appended to both the snapshot `summary.md` and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
+`--lucid-folder <id>` copies the live document into a `<doc-title>` subfolder under the given Lucid folder (created on first use, reused after), titled `SNAPSHOT_<doc-title>_<YYYY-MM-DD> <HH:MM>`. A link is appended to both the snapshot `summary.md` and the PR body. The folder ID can be found in the Lucid URL (`folder_id=...`). Omit the flag to skip this step.
 
 No prior snapshot? The first run creates an "initial snapshot" commit (JSON baseline, no diff summary).
 No material changes since last snapshot? No commit, no PR — the command exits silently.
