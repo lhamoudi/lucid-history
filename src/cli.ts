@@ -409,15 +409,15 @@ program
         const pageWord = changedPages.length === 1 ? 'page' : 'pages';
         const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
         const payload = {
-          text: `📊 ${doc.title} — ${changedPages.length} ${pageWord} changed`,
+          text: `📸 Daily Snapshot — ${doc.title} · ${changedPages.length} ${pageWord} changed`,
           blocks: [
             {
               type: 'header',
-              text: { type: 'plain_text', text: `📊 ${doc.title}`, emoji: true },
+              text: { type: 'plain_text', text: `${doc.title}`, emoji: true },
             },
             {
               type: 'context',
-              elements: [{ type: 'mrkdwn', text: `${changedPages.length} ${pageWord} changed · ${dateStr}` }],
+              elements: [{ type: 'mrkdwn', text: `📸 *Daily Snapshot* · ${changedPages.length} ${pageWord} changed · ${dateStr}` }],
             },
             { type: 'divider' },
             {
@@ -529,10 +529,10 @@ function buildSlackDigestPayloads(digests: DocNetDigest[], opts: DigestFormatOpt
     let text = toMrkdwn(doc.summary);
     if (text.length > SLACK_MAX) text = text.slice(0, SLACK_MAX - truncNote.length) + truncNote;
     return {
-      text: `📊 ${doc.title} — weekly digest`,
+      text: `🗓️ Weekly Digest — ${doc.title} · ${weekLabel}`,
       blocks: [
-        { type: 'header', text: { type: 'plain_text', text: `📊 ${doc.title}`, emoji: true } },
-        { type: 'context', elements: [{ type: 'mrkdwn', text: contextText }] },
+        { type: 'header', text: { type: 'plain_text', text: `${doc.title}`, emoji: true } },
+        { type: 'context', elements: [{ type: 'mrkdwn', text: `🗓️ *Weekly Digest* · ${contextText}` }] },
         { type: 'divider' },
         { type: 'section', text: { type: 'mrkdwn', text } },
         { type: 'divider' },

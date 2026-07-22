@@ -10,8 +10,8 @@ import { summarizeDiff } from './summarize.js';
 import { renderComparedPages, isDateOnlyChange } from './renders.js';
 import { cloneOrOpen, commitAndPushBranch, openPullRequest, mergePullRequest } from './git.js';
 import { appendHistoryEntry } from './history.js';
-import { compileDigest, getWeekRange } from './digest.js';
-import { findPage, createPage, upsertPage, markdownToStorage, absolutifyLinks, createSnapshotPage } from './confluence.js';
+import { findDigestRanges, getWeekRange } from './digest.js';
+import { findPage, createPage, upsertPage, upsertChildPage, getPageParentId, movePage, markdownToStorage, absolutifyLinks, createSnapshotPage } from './confluence.js';
 const program = new Command();
 program
     .name('lucid-history')
@@ -314,7 +314,9 @@ program
             }
             const images = [];
             const snapshotPageTitle = `${doc.title} — ${timestampToLabel(timestamp)}`;
-            confluenceSnapshotUrl = await createSnapshotPage(opts.confluenceSpace, docPageId, snapshotPageTitle, summary, images, opts.confluenceUrl, cAuth);
+            const snapshotsContainerTitle = `${doc.title} — Snapshots`;
+            const snapshotsContainerId = await upsertChildPage(opts.confluenceSpace, docPageId, snapshotsContainerTitle, '<p>Individual snapshot pages. Managed by lucid-history.</p>', opts.confluenceUrl, cAuth);
+            confluenceSnapshotUrl = await createSnapshotPage(opts.confluenceSpace, snapshotsContainerId, snapshotPageTitle, summary, images, opts.confluenceUrl, cAuth);
             console.log(`[${doc.title}] Confluence snapshot page: ${confluenceSnapshotUrl}`);
         }
         catch (err) {
@@ -337,15 +339,15 @@ program
         const pageWord = changedPages.length === 1 ? 'page' : 'pages';
         const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
         const payload = {
-            text: `📊 ${doc.title} — ${changedPages.length} ${pageWord} changed`,
+            text: `📸 Daily Snapshot — ${doc.title} · ${changedPages.length} ${pageWord} changed`,
             blocks: [
                 {
                     type: 'header',
-                    text: { type: 'plain_text', text: `📊 ${doc.title}`, emoji: true },
+                    text: { type: 'plain_text', text: `${doc.title}`, emoji: true },
                 },
                 {
                     type: 'context',
-                    elements: [{ type: 'mrkdwn', text: `${changedPages.length} ${pageWord} changed · ${dateStr}` }],
+                    elements: [{ type: 'mrkdwn', text: `📸 *Daily Snapshot* · ${changedPages.length} ${pageWord} changed · ${dateStr}` }],
                 },
                 { type: 'divider' },
                 {
@@ -408,81 +410,54 @@ function digestWeekLabel(start) {
     sunday.setUTCDate(start.getUTCDate() + 6);
     return `Week of ${shortDate(start)} – ${shortDate(sunday)}, ${start.getUTCFullYear()}`;
 }
-function digestRowUrl(doc, row, owner, repo) {
-    return `https://github.com/${owner}/${repo}/blob/main/snapshots/${doc.docFolder}/${row.folderTimestamp}/summary.md`;
+function snapshotGhUrl(range, ts, owner, repo) {
+    return `https://github.com/${owner}/${repo}/blob/main/${range.docFolder}/snapshots/${ts}/summary.md`;
 }
 function formatMarkdownDigest(digests, opts) {
     const sections = digests.map(doc => {
-        const title = `## ${doc.title}`;
-        if (doc.rows.length === 0)
-            return `${title}\n\n_No changes this week._`;
-        const bullets = doc.rows.map(row => {
-            const d = new Date(row.isoDate + 'T00:00:00Z');
-            const time = row.timestamp.slice(11, 16);
-            const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
-            const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
-            const pages = row.affectedPages || '—';
-            const url = digestRowUrl(doc, row, opts.owner, opts.repo);
-            return `- **${dateLine}** — ${counts} · ${pages}\n  ${row.theme} [Summary](${url})`;
-        });
-        return `${title}\n\n${bullets.join('\n')}`;
+        const comparison = doc.baselineTs
+            ? `_Comparing ${timestampToLabel(doc.baselineTs)} → ${timestampToLabel(doc.headTs)}_`
+            : `_Initial snapshot: ${timestampToLabel(doc.headTs)}_`;
+        return `## ${doc.title}\n\n${comparison}\n\n${doc.summary}`;
     });
     return `# ${digestWeekLabel(opts.start)} — Lucidchart Diagram Digest\n\n${sections.join('\n\n')}`;
 }
 function formatMarkdownDocDigest(doc, opts) {
-    const bullets = doc.rows.map(row => {
-        const d = new Date(row.isoDate + 'T00:00:00Z');
-        const time = row.timestamp.slice(11, 16);
-        const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
-        const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
-        const pages = row.affectedPages || '—';
-        const url = digestRowUrl(doc, row, opts.owner, opts.repo);
-        return `- **${dateLine}** — ${counts} · ${pages}\n  ${row.theme} [Summary](${url})`;
-    });
-    return `# ${digestWeekLabel(opts.start)}\n\n${bullets.join('\n')}`;
+    const { owner, repo } = opts;
+    const headUrl = snapshotGhUrl(doc, doc.headTs, owner, repo);
+    const comparison = doc.baselineTs
+        ? `**Comparing:** ${timestampToLabel(doc.baselineTs)} → ${timestampToLabel(doc.headTs)}`
+        : `**Initial snapshot:** ${timestampToLabel(doc.headTs)}`;
+    return `# ${digestWeekLabel(opts.start)}\n\n${comparison}\n\n${doc.summary}\n\n[View snapshot on GitHub](${headUrl})`;
 }
 function buildSlackDigestPayloads(digests, opts) {
     const weekLabel = digestWeekLabel(opts.start);
-    return digests
-        .filter(doc => doc.rows.length > 0)
-        .map(doc => {
+    const { owner, repo } = opts;
+    const SLACK_MAX = 2900;
+    return digests.map(doc => {
         const docId = doc.docFolder.split('___').pop() ?? '';
         const lucidUrl = `https://lucid.app/lucidchart/${docId}/edit`;
-        const bullets = doc.rows.map(row => {
-            const d = new Date(row.isoDate + 'T00:00:00Z');
-            const time = row.timestamp.slice(11, 16);
-            const dateLine = `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${time}`;
-            const counts = `+${row.pagesAdded} ~${row.pagesChanged} −${row.pagesRemoved}`;
-            const pages = row.affectedPages || '—';
-            const url = digestRowUrl(doc, row, opts.owner, opts.repo);
-            return `• *${dateLine}* — ${counts} · ${pages}\n  ${row.theme} <${url}|Summary>`;
-        });
-        const snapshotWord = doc.rows.length === 1 ? 'snapshot' : 'snapshots';
+        const headUrl = snapshotGhUrl(doc, doc.headTs, owner, repo);
+        const contextText = doc.baselineTs
+            ? `${weekLabel} · ${timestampToLabel(doc.baselineTs)} → ${timestampToLabel(doc.headTs)}`
+            : `${weekLabel} · Initial snapshot`;
+        const truncNote = `\n\n_[truncated — see <${headUrl}|full summary> for details]_`;
+        let text = toMrkdwn(doc.summary);
+        if (text.length > SLACK_MAX)
+            text = text.slice(0, SLACK_MAX - truncNote.length) + truncNote;
         return {
-            text: `📊 ${doc.title} — ${doc.rows.length} ${snapshotWord} this week`,
+            text: `🗓️ Weekly Digest — ${doc.title} · ${weekLabel}`,
             blocks: [
-                {
-                    type: 'header',
-                    text: { type: 'plain_text', text: `📊 ${doc.title}`, emoji: true },
-                },
-                {
-                    type: 'context',
-                    elements: [{ type: 'mrkdwn', text: `${weekLabel} · ${doc.rows.length} ${snapshotWord}` }],
-                },
+                { type: 'header', text: { type: 'plain_text', text: `${doc.title}`, emoji: true } },
+                { type: 'context', elements: [{ type: 'mrkdwn', text: `🗓️ *Weekly Digest* · ${contextText}` }] },
                 { type: 'divider' },
-                {
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: bullets.join('\n\n') },
-                },
+                { type: 'section', text: { type: 'mrkdwn', text } },
                 { type: 'divider' },
                 {
                     type: 'actions',
                     elements: [
-                        {
-                            type: 'button',
-                            text: { type: 'plain_text', text: '🔗 View in Lucid', emoji: true },
-                            url: lucidUrl,
-                        },
+                        { type: 'button', text: { type: 'plain_text', text: '🔗 View in Lucid', emoji: true }, url: lucidUrl },
+                        { type: 'button', text: { type: 'plain_text', text: '📄 View Snapshot', emoji: true }, url: headUrl },
                     ],
                 },
             ],
@@ -512,22 +487,63 @@ program
         process.exit(1);
     }
     const ref = opts.week ? new Date(opts.week + 'T12:00:00Z') : new Date();
-    const digests = await compileDigest(opts.local, ref);
-    const totalRows = digests.reduce((sum, d) => sum + d.rows.length, 0);
-    if (totalRows === 0) {
-        console.log('No changes this week — skipping digest.');
-        return;
-    }
     const { start, end } = getWeekRange(ref);
     const [owner, repo] = opts.repo.split('/');
     const fmtOpts = { start, end, owner, repo };
+    const ranges = await findDigestRanges(opts.local, ref);
+    const activeRanges = ranges.filter(r => r.headTs !== null);
+    if (activeRanges.length === 0) {
+        console.log('No changes this week — skipping digest.');
+        return;
+    }
+    // Build net-diff summaries: reuse the same normalize→diff→summarize pipeline
+    // used by the snapshot command, but compare baseline-before-week vs head-of-week.
+    const digests = [];
+    for (const range of activeRanges) {
+        let summary;
+        if (!range.baselineTs) {
+            // First snapshot ever for this doc — read the stored summary.md directly.
+            try {
+                const raw = await readFile(join(opts.local, range.docFolder, 'snapshots', range.headTs, 'summary.md'), 'utf8');
+                summary = raw.replace(/\n\n---\n\n## Page renders[\s\S]*$/, '')
+                    .replace(/\n\n---\n\n\*\*Lucid snapshot:.*$/s, '')
+                    .trim();
+            }
+            catch {
+                summary = '_Initial snapshot taken this week._';
+            }
+        }
+        else {
+            // Net diff between the pre-week baseline and the week's latest snapshot.
+            let baseDoc, headDoc;
+            try {
+                baseDoc = JSON.parse(await readFile(join(opts.local, range.docFolder, 'snapshots', range.baselineTs, 'snapshot.json'), 'utf8'));
+                headDoc = JSON.parse(await readFile(join(opts.local, range.docFolder, 'snapshots', range.headTs, 'snapshot.json'), 'utf8'));
+            }
+            catch {
+                console.warn(`[weekly-digest] Could not load snapshots for "${range.title}" — skipping`);
+                continue;
+            }
+            const d = diff(baseDoc, headDoc);
+            if (isEmpty(d)) {
+                // All changes this week cancelled out — not worth publishing.
+                continue;
+            }
+            summary = await summarizeDiff(range.title, d);
+        }
+        digests.push({ ...range, summary });
+    }
+    if (digests.length === 0) {
+        console.log('No net changes this week — skipping digest.');
+        return;
+    }
     if (opts.dryRun) {
         console.log(formatMarkdownDigest(digests, fmtOpts));
         return;
     }
+    const monday = `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}-${String(start.getUTCDate()).padStart(2, '0')}`;
     if (opts.writeDigests) {
-        const monday = `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, '0')}-${String(start.getUTCDate()).padStart(2, '0')}`;
-        for (const doc of digests.filter(d => d.rows.length > 0 && d.docFolder)) {
+        for (const doc of digests) {
             const outPath = join(opts.local, doc.docFolder, 'digests', `${monday}.md`);
             await mkdir(dirname(outPath), { recursive: true });
             await writeFile(outPath, formatMarkdownDocDigest(doc, fmtOpts));
@@ -550,19 +566,16 @@ program
     if (hasConfluence) {
         const auth = { email: opts.confluenceEmail, token: opts.confluenceToken };
         const weekLabel = digestWeekLabel(start);
-        const docsWithChanges = digests.filter(doc => doc.rows.length > 0);
-        for (const doc of docsWithChanges) {
+        for (const doc of digests) {
             try {
                 const docPage = await findPage(opts.confluenceSpace, doc.title, opts.confluenceUrl, auth);
                 if (!docPage) {
                     console.warn(`[weekly-digest] No Confluence page for "${doc.title}" — skipping`);
                     continue;
                 }
-                // Confluence requires space-wide unique titles, so prefix both the
-                // container and week page titles with the doc name.
                 const folderTitle = `${doc.title} — Weekly Digests`;
                 const weekPageTitle = `${doc.title} — ${weekLabel}`;
-                const folderId = await upsertPage(opts.confluenceSpace, docPage.id, folderTitle, '<p>Per-week change summaries for this diagram.</p>', opts.confluenceUrl, auth);
+                const folderId = await upsertPage(opts.confluenceSpace, docPage.id, folderTitle, '<p>Per-week net-change summaries for this diagram.</p>', opts.confluenceUrl, auth);
                 const pageBody = markdownToStorage(formatMarkdownDocDigest(doc, fmtOpts));
                 await upsertPage(opts.confluenceSpace, folderId, weekPageTitle, pageBody, opts.confluenceUrl, auth);
                 console.log(`[weekly-digest] Confluence: ${doc.title} → ${weekLabel}`);
@@ -651,7 +664,11 @@ program
         console.log(`[${docTitle}] Upserting Confluence page...`);
         const docPageId = await upsertPage(opts.confluenceSpace, opts.confluenceParent, docTitle, pageBody, opts.confluenceUrl, auth);
         console.log(`[${docTitle}] Doc page done.`);
-        // Create per-snapshot child pages for any timestamp dirs not yet in Confluence.
+        // Find or create the "Snapshots" container under the doc page.
+        const snapshotsContainerTitle = `${docTitle} — Snapshots`;
+        const snapshotsContainerId = await upsertChildPage(opts.confluenceSpace, docPageId, snapshotsContainerTitle, '<p>Individual snapshot pages. Managed by lucid-history.</p>', opts.confluenceUrl, auth);
+        console.log(`[${docTitle}] Snapshots container ready.`);
+        // Create per-snapshot child pages; migrate any that were placed directly under the doc page.
         const allTimeDirs = (await readdir(docDir, { withFileTypes: true }))
             .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
             .map((e) => e.name)
@@ -659,8 +676,20 @@ program
         for (const folderTs of allTimeDirs) {
             const snapshotPageTitle = `${docTitle} — ${timestampToLabel(folderTs)}`;
             const existing = await findPage(opts.confluenceSpace, snapshotPageTitle, opts.confluenceUrl, auth);
-            if (existing)
+            if (existing) {
+                // Move to Snapshots container if currently a direct child of the doc page.
+                const parentId = await getPageParentId(existing.id, opts.confluenceUrl, auth);
+                if (parentId !== snapshotsContainerId) {
+                    try {
+                        await movePage(existing.id, snapshotsContainerId, opts.confluenceSpace, opts.confluenceUrl, auth);
+                        console.log(`[${docTitle}] Moved to Snapshots folder: ${snapshotPageTitle}`);
+                    }
+                    catch (err) {
+                        console.warn(`[${docTitle}] Move failed for ${folderTs}: ${err.message}`);
+                    }
+                }
                 continue;
+            }
             let summaryMd = '';
             try {
                 summaryMd = await readFile(join(opts.local, folderName, 'snapshots', folderTs, 'summary.md'), 'utf8');
@@ -668,9 +697,8 @@ program
             catch {
                 continue;
             }
-            const images = [];
             try {
-                await createSnapshotPage(opts.confluenceSpace, docPageId, snapshotPageTitle, summaryMd, images, opts.confluenceUrl, auth);
+                await createSnapshotPage(opts.confluenceSpace, snapshotsContainerId, snapshotPageTitle, summaryMd, [], opts.confluenceUrl, auth);
                 console.log(`[${docTitle}] Created snapshot page: ${snapshotPageTitle}`);
             }
             catch (err) {

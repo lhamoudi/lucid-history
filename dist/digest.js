@@ -1,31 +1,8 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-// Matches the current row format:
-// | **YYYY-MM-DD HH:MM UTC**<br>...links... | +N ~N −N | pages | theme — [Full Summary](<folderTimestamp>/summary.md) |
-const ROW_RE = /^\|\s+\*\*(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC\*\*[^|]*\|\s*\+(\d+)\s*~(\d+)\s*[−-](\d+)\s*\|\s*([^|]*?)\s*\|\s*(.*?)<br>\[Full Summary\]\(([^)]+)\/summary\.md\)\s*\|/;
-export function parseHistoryRows(historyMd) {
-    return historyMd
-        .split('\n')
-        .filter(l => l.startsWith('| **'))
-        .flatMap(l => {
-        const m = ROW_RE.exec(l);
-        if (!m)
-            return [];
-        return [{
-                timestamp: `${m[1]} ${m[2]} UTC`,
-                isoDate: m[1],
-                folderTimestamp: m[8],
-                pagesAdded: parseInt(m[3], 10),
-                pagesChanged: parseInt(m[4], 10),
-                pagesRemoved: parseInt(m[5], 10),
-                affectedPages: m[6].trim(),
-                theme: m[7].trim(),
-            }];
-    });
-}
 export function getWeekRange(ref) {
     const d = new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate()));
-    const daysFromMonday = (d.getUTCDay() + 6) % 7; // Mon=0, Tue=1, ..., Sun=6
+    const daysFromMonday = (d.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
     const start = new Date(d);
     start.setUTCDate(d.getUTCDate() - daysFromMonday);
     const end = new Date(start);
@@ -33,30 +10,42 @@ export function getWeekRange(ref) {
     end.setUTCHours(23, 59, 59, 999);
     return { start, end };
 }
-export async function compileDigest(local, ref) {
+function parseFolderDate(ts) {
+    return new Date(ts.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z'));
+}
+const UUID_SUFFIX_RE = /___[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export async function findDigestRanges(local, ref) {
     const docs = JSON.parse(await readFile(join(local, 'docs.json'), 'utf8'));
     const { start, end } = getWeekRange(ref);
     const allEntries = await readdir(local, { withFileTypes: true }).catch(() => []);
     const result = [];
     for (const doc of docs) {
-        const docFolderName = allEntries.find(e => e.isDirectory() && e.name.endsWith(`___${doc.id}`))?.name;
+        const docFolderName = allEntries.find(e => e.isDirectory() && UUID_SUFFIX_RE.test(e.name) && e.name.endsWith(`___${doc.id}`))?.name;
         if (!docFolderName) {
-            result.push({ title: doc.title, docFolder: '', rows: [] });
+            result.push({ title: doc.title, docFolder: '', baselineTs: null, headTs: null });
             continue;
         }
-        let historyMd;
+        let snapDirs;
         try {
-            historyMd = await readFile(join(local, docFolderName, 'snapshots', 'HISTORY.md'), 'utf8');
+            snapDirs = (await readdir(join(local, docFolderName, 'snapshots'), { withFileTypes: true }))
+                .filter(e => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
+                .map(e => e.name)
+                .sort(); // ascending chronological; later entries overwrite earlier ones below
         }
         catch {
-            result.push({ title: doc.title, docFolder: docFolderName, rows: [] });
+            result.push({ title: doc.title, docFolder: docFolderName, baselineTs: null, headTs: null });
             continue;
         }
-        const rows = parseHistoryRows(historyMd).filter(r => {
-            const rowDate = new Date(r.isoDate + 'T00:00:00Z');
-            return rowDate >= start && rowDate <= end;
-        });
-        result.push({ title: doc.title, docFolder: docFolderName, rows });
+        let baselineTs = null;
+        let headTs = null;
+        for (const ts of snapDirs) {
+            const d = parseFolderDate(ts);
+            if (d < start)
+                baselineTs = ts; // last-wins → most recent before week
+            else if (d >= start && d <= end)
+                headTs = ts; // last-wins → most recent in week
+        }
+        result.push({ title: doc.title, docFolder: docFolderName, baselineTs, headTs });
     }
     return result;
 }

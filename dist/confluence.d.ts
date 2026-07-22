@@ -12,6 +12,8 @@ export declare function updatePage(pageId: string, title: string, body: string, 
 export declare function upsertPage(spaceKey: string, parentId: string, title: string, body: string, baseUrl: string, auth: Auth): Promise<string>;
 export declare function findChildPage(parentId: string, title: string, baseUrl: string, auth: Auth): Promise<PageMeta | null>;
 export declare function upsertChildPage(spaceKey: string, parentId: string, title: string, body: string, baseUrl: string, auth: Auth): Promise<string>;
+export declare function getPageParentId(pageId: string, baseUrl: string, auth: Auth): Promise<string | null>;
+export declare function movePage(pageId: string, newParentId: string, spaceKey: string, baseUrl: string, auth: Auth): Promise<void>;
 export type SnapshotImage = {
     filename: string;
     data: Buffer;

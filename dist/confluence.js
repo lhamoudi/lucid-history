@@ -86,6 +86,22 @@ export async function upsertChildPage(spaceKey, parentId, title, body, baseUrl, 
     }
     return createPage(spaceKey, parentId, title, body, baseUrl, auth);
 }
+export async function getPageParentId(pageId, baseUrl, auth) {
+    const data = (await apiRequest('GET', `${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}?expand=ancestors`, auth));
+    const ancestors = data.ancestors ?? [];
+    return ancestors.length > 0 ? ancestors[ancestors.length - 1].id : null;
+}
+export async function movePage(pageId, newParentId, spaceKey, baseUrl, auth) {
+    const page = (await apiRequest('GET', `${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}?expand=body.storage,version`, auth));
+    await apiRequest('PUT', `${siteOrigin(baseUrl)}/wiki/rest/api/content/${pageId}`, auth, {
+        type: 'page',
+        title: page.title,
+        version: { number: page.version.number + 1 },
+        space: { key: spaceKey },
+        ancestors: [{ id: newParentId }],
+        body: { storage: { value: page.body.storage.value, representation: 'storage' } },
+    });
+}
 export async function uploadAttachment(pageId, filename, data, baseUrl, auth) {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(data)], { type: 'image/png' }), filename);
