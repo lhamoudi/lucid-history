@@ -6,8 +6,23 @@ on:
   workflow_dispatch:          # manual trigger from the Actions tab
 
 jobs:
-  snapshot:
+  load-docs:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: matrix
+        run: echo "value=$(jq -c '[.[] | {id:.id, title:.title}]' docs.json)" >> $GITHUB_OUTPUT
+
+  snapshot:
+    needs: load-docs
+    runs-on: ubuntu-latest
+    name: "${{ matrix.doc.title }}"
+    strategy:
+      matrix:
+        doc: ${{ fromJson(needs.load-docs.outputs.matrix) }}
+      fail-fast: false   # one doc failing does not cancel the others
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,7 +40,7 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
 
-      - name: Run snapshots
+      - name: Run snapshot
         env:
           LUCID_API_KEY: ${{ secrets.LUCID_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -46,14 +61,32 @@ jobs:
           if [ -n "$CONFLUENCE_TOKEN" ] && [ -n "$CONFLUENCE_PARENT_ID" ]; then
             CONFLUENCE_FLAGS="--confluence-url $CONFLUENCE_URL --confluence-email $CONFLUENCE_EMAIL --confluence-token $CONFLUENCE_TOKEN --confluence-space $CONFLUENCE_SPACE --confluence-parent $CONFLUENCE_PARENT_ID"
           fi
-          for id in $(jq -r '.[].id' docs.json); do
-            npx lucid-history snapshot "$id" \
-              --repo "${{ github.repository }}" \
-              --auto-merge \
-              $FOLDER_FLAG \
-              $SLACK_FLAG \
-              $CONFLUENCE_FLAGS
-          done
+          npx lucid-history snapshot "${{ matrix.doc.id }}" \
+            --repo "${{ github.repository }}" \
+            $FOLDER_FLAG \
+            $SLACK_FLAG \
+            $CONFLUENCE_FLAGS
+
+  update-confluence:
+    needs: snapshot
+    if: always()   # run even if some snapshot jobs failed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SNAPSHOTS_GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install lucid-history
+        run: npm install github:lhamoudi/lucid-history
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
 
       - name: Update Confluence
         env:
