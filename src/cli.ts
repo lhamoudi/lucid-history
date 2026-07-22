@@ -798,70 +798,77 @@ program
 
         const pageBody = markdownToStorage(parts.join('\n\n'));
 
-        console.log(`[${docTitle}] Upserting Confluence page...`);
-        const docPageId = await upsertPage(
-          opts.confluenceSpace,
-          opts.confluenceParent,
-          docTitle,
-          pageBody,
-          opts.confluenceUrl,
-          auth,
-        );
-        console.log(`[${docTitle}] Doc page done.`);
+        // A Confluence failure for this doc (bad space key, missing permission, etc.)
+        // shouldn't abort every other doc's update — warn and move on.
+        try {
+          console.log(`[${docTitle}] Upserting Confluence page...`);
+          const docPageId = await upsertPage(
+            opts.confluenceSpace,
+            opts.confluenceParent,
+            docTitle,
+            pageBody,
+            opts.confluenceUrl,
+            auth,
+          );
+          console.log(`[${docTitle}] Doc page done.`);
 
-        // Find or create the "Snapshots" container under the doc page.
-        const snapshotsContainerTitle = `${docTitle} — Snapshots`;
-        const snapshotsContainerId = await upsertChildPage(
-          opts.confluenceSpace,
-          docPageId,
-          snapshotsContainerTitle,
-          '<p>Individual snapshot pages. Managed by lucid-history.</p>',
-          opts.confluenceUrl,
-          auth,
-        );
-        console.log(`[${docTitle}] Snapshots container ready.`);
+          // Find or create the "Snapshots" container under the doc page.
+          const snapshotsContainerTitle = `${docTitle} — Snapshots`;
+          const snapshotsContainerId = await upsertChildPage(
+            opts.confluenceSpace,
+            docPageId,
+            snapshotsContainerTitle,
+            '<p>Individual snapshot pages. Managed by lucid-history.</p>',
+            opts.confluenceUrl,
+            auth,
+          );
+          console.log(`[${docTitle}] Snapshots container ready.`);
 
-        // Create per-snapshot child pages; migrate any that were placed directly under the doc page.
-        const allTimeDirs = (await readdir(docDir, { withFileTypes: true }))
-          .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
-          .map((e) => e.name)
-          .sort();
+          // Create per-snapshot child pages; migrate any that were placed directly under the doc page.
+          const allTimeDirs = (await readdir(docDir, { withFileTypes: true }))
+            .filter((e) => e.isDirectory() && /^\d{4}-\d{2}-\d{2}T/.test(e.name))
+            .map((e) => e.name)
+            .sort();
 
-        for (const folderTs of allTimeDirs) {
-          const snapshotPageTitle = `${docTitle} — ${timestampToLabel(folderTs)}`;
-          const existing = await findPage(opts.confluenceSpace, snapshotPageTitle, opts.confluenceUrl, auth);
+          for (const folderTs of allTimeDirs) {
+            const snapshotPageTitle = `${docTitle} — ${timestampToLabel(folderTs)}`;
+            const existing = await findPage(opts.confluenceSpace, snapshotPageTitle, opts.confluenceUrl, auth);
 
-          if (existing) {
-            // Move to Snapshots container if currently a direct child of the doc page.
-            const parentId = await getPageParentId(existing.id, opts.confluenceUrl, auth);
-            if (parentId !== snapshotsContainerId) {
-              try {
-                await movePage(existing.id, snapshotsContainerId, opts.confluenceSpace, opts.confluenceUrl, auth);
-                console.log(`[${docTitle}] Moved to Snapshots folder: ${snapshotPageTitle}`);
-              } catch (err) {
-                console.warn(`[${docTitle}] Move failed for ${folderTs}: ${(err as Error).message}`);
+            if (existing) {
+              // Move to Snapshots container if currently a direct child of the doc page.
+              const parentId = await getPageParentId(existing.id, opts.confluenceUrl, auth);
+              if (parentId !== snapshotsContainerId) {
+                try {
+                  await movePage(existing.id, snapshotsContainerId, opts.confluenceSpace, opts.confluenceUrl, auth);
+                  console.log(`[${docTitle}] Moved to Snapshots folder: ${snapshotPageTitle}`);
+                } catch (err) {
+                  console.warn(`[${docTitle}] Move failed for ${folderTs}: ${(err as Error).message}`);
+                }
               }
+              continue;
             }
-            continue;
-          }
 
-          let summaryMd = '';
-          try {
-            summaryMd = await readFile(join(opts.local, folderName, 'snapshots', folderTs, 'summary.md'), 'utf8');
-          } catch {
-            continue;
-          }
+            let summaryMd = '';
+            try {
+              summaryMd = await readFile(join(opts.local, folderName, 'snapshots', folderTs, 'summary.md'), 'utf8');
+            } catch {
+              continue;
+            }
 
-          try {
-            await createSnapshotPage(
-              opts.confluenceSpace, snapshotsContainerId, snapshotPageTitle, summaryMd, [], opts.confluenceUrl, auth,
-            );
-            console.log(`[${docTitle}] Created snapshot page: ${snapshotPageTitle}`);
-          } catch (err) {
-            console.warn(`[${docTitle}] Snapshot page failed for ${folderTs}: ${(err as Error).message}`);
+            try {
+              await createSnapshotPage(
+                opts.confluenceSpace, snapshotsContainerId, snapshotPageTitle, summaryMd, [], opts.confluenceUrl, auth,
+              );
+              console.log(`[${docTitle}] Created snapshot page: ${snapshotPageTitle}`);
+            } catch (err) {
+              console.warn(`[${docTitle}] Snapshot page failed for ${folderTs}: ${(err as Error).message}`);
+            }
           }
+          console.log(`[${docTitle}] Done.`);
+        } catch (err) {
+          console.warn(`[${docTitle}] Confluence update failed, skipping this doc: ${(err as Error).message}`);
+          continue;
         }
-        console.log(`[${docTitle}] Done.`);
       }
     },
   );
