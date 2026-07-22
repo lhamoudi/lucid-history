@@ -120,13 +120,15 @@ npx lucid-history weekly-digest \
 npx lucid-history weekly-digest --repo your-org/your-snapshots-repo --dry-run
 ```
 
-Reads each doc's `HISTORY.md` from the local snapshots checkout, filters to the requested week (Mon–Sun), and posts to any configured outputs. Skips silently if there are no changes that week.
+For each tracked document, finds the most recent snapshot **before** the week start (baseline) and the most recent snapshot **within** the week (head), diffs them, and generates a single AI summary of the net change. This means day-over-day churn that cancels out by Friday is invisible — only what's structurally different at the end of the week is reported. Skips silently if there are no changes that week.
 
 `--week <YYYY-MM-DD>` targets the week containing the given date (default: current week). When run via GitHub Actions on Monday morning, the workflow passes last week's date automatically.
 
 `--write-digests` writes per-doc Markdown files (committed to the snapshots repo as `<doc>/digests/<monday>.md`).
 
 When Confluence flags are provided, each week's digest is published as a separate Confluence page (one per week, titled by the week label) under the specified parent.
+
+Slack posts are labelled `🗓️ Weekly Digest` in the context line to distinguish them from `📸 Daily Snapshot` posts.
 
 ### `confluence-update` — publish snapshot history to Confluence
 
