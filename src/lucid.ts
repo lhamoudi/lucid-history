@@ -7,6 +7,8 @@ const RETRYABLE_4XX = new Set([408, 429]);
 
 async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 7): Promise<T> {
   let lastError: unknown;
+  let lastWasTimeout = false;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn();
@@ -14,13 +16,28 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 7): Promise<T> {
       lastError = err;
       const status = (err as { status?: number }).status;
       const msg = (err as Error).message ?? String(err);
+
+      const isTimeout = status === 408 || status === 504;
+      // Lucid returns 403 after repeated timeouts on heavy documents as a back-off signal.
+      // Treat it as transient only when the previous attempt was also a timeout.
+      const isTransientForbidden = status === 403 && lastWasTimeout;
+
       if (typeof status === 'number') {
-        const retryable = RETRYABLE_4XX.has(status) || status >= 500;
+        const retryable = RETRYABLE_4XX.has(status) || status >= 500 || isTransientForbidden;
         if (!retryable) throw err;
       }
+
+      lastWasTimeout = isTimeout;
+
       if (attempt + 1 < maxAttempts) {
-        const delayMs = 1000 * 2 ** attempt;
-        console.warn(`[lucid] ${status ? `HTTP ${status}` : 'Error'} — retrying in ${delayMs / 1000}s (attempt ${attempt + 2}/${maxAttempts}): ${msg}`);
+        // Give Lucid a longer cooldown after a timeout-induced 403
+        const delayMs = isTransientForbidden
+          ? 30_000
+          : 1000 * 2 ** attempt;
+        const label = isTransientForbidden
+          ? 'HTTP 403 after timeout (transient back-off)'
+          : `HTTP ${status ?? 'Error'}`;
+        console.warn(`[lucid] ${label} — retrying in ${delayMs / 1000}s (attempt ${attempt + 2}/${maxAttempts}): ${msg}`);
         await new Promise(r => setTimeout(r, delayMs));
       }
     }

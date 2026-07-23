@@ -3,6 +3,7 @@ const LUCID_API_BASE = 'https://api.lucid.co';
 const RETRYABLE_4XX = new Set([408, 429]);
 async function withRetry(fn, maxAttempts = 7) {
     let lastError;
+    let lastWasTimeout = false;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
             return await fn();
@@ -11,14 +12,25 @@ async function withRetry(fn, maxAttempts = 7) {
             lastError = err;
             const status = err.status;
             const msg = err.message ?? String(err);
+            const isTimeout = status === 408 || status === 504;
+            // Lucid returns 403 after repeated timeouts on heavy documents as a back-off signal.
+            // Treat it as transient only when the previous attempt was also a timeout.
+            const isTransientForbidden = status === 403 && lastWasTimeout;
             if (typeof status === 'number') {
-                const retryable = RETRYABLE_4XX.has(status) || status >= 500;
+                const retryable = RETRYABLE_4XX.has(status) || status >= 500 || isTransientForbidden;
                 if (!retryable)
                     throw err;
             }
+            lastWasTimeout = isTimeout;
             if (attempt + 1 < maxAttempts) {
-                const delayMs = 1000 * 2 ** attempt;
-                console.warn(`[lucid] ${status ? `HTTP ${status}` : 'Error'} — retrying in ${delayMs / 1000}s (attempt ${attempt + 2}/${maxAttempts}): ${msg}`);
+                // Give Lucid a longer cooldown after a timeout-induced 403
+                const delayMs = isTransientForbidden
+                    ? 30_000
+                    : 1000 * 2 ** attempt;
+                const label = isTransientForbidden
+                    ? 'HTTP 403 after timeout (transient back-off)'
+                    : `HTTP ${status ?? 'Error'}`;
+                console.warn(`[lucid] ${label} — retrying in ${delayMs / 1000}s (attempt ${attempt + 2}/${maxAttempts}): ${msg}`);
                 await new Promise(r => setTimeout(r, delayMs));
             }
         }
