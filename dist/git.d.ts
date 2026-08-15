@@ -18,6 +18,7 @@ export declare function openPullRequest(opts: {
     url: string;
     number: number;
 }>;
+export declare function classifyMergeError(err: any): 'stale-base' | 'real-conflict' | 'other';
 export declare function mergePullRequest(opts: {
     owner: string;
     repo: string;
